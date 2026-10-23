@@ -1,0 +1,42 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_34-fbc1099d9eaf974943e38126a37cd7c986da14e7",
+  "solcVersion": "0.8.34",
+  "solcLongVersion": "0.8.34+commit.80d5c536",
+  "compilerType": "solc",
+  "userSourceNameMap": {
+    "contracts/CampusPass.sol": "project/contracts/CampusPass.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "osaka",
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/CampusPass.sol": {
+        "content": "\r\n // SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.24;\r\n\r\ncontract CampusPass {\r\n    struct Event {\r\n        uint256 id;\r\n        address organizer;\r\n        string title;\r\n        uint256 capacity;\r\n        uint256 registeredCount;\r\n        bool active;\r\n    }\r\n\r\n    uint256 public nextEventId = 1;\r\n\r\n    mapping(uint256 => Event) public events;\r\n    mapping(uint256 => mapping(address => bool)) public registered;\r\n    mapping(uint256 => mapping(address => bool)) public attended;\r\n\r\n    event EventCreated(\r\n        uint256 indexed eventId,\r\n        address indexed organizer,\r\n        string title,\r\n        uint256 capacity\r\n    );\r\n\r\n    event UserRegistered(\r\n        uint256 indexed eventId,\r\n        address indexed participant\r\n    );\r\n\r\n    event AttendanceMarked(\r\n        uint256 indexed eventId,\r\n        address indexed participant\r\n    );\r\n\r\n    function createEvent(\r\n        string calldata title,\r\n        uint256 capacity\r\n    ) external returns (uint256) {\r\n        require(bytes(title).length > 0, \"Title required\");\r\n        require(capacity > 0, \"Capacity must be positive\");\r\n\r\n        uint256 eventId = nextEventId++;\r\n\r\n        events[eventId] = Event({\r\n            id: eventId,\r\n            organizer: msg.sender,\r\n            title: title,\r\n            capacity: capacity,\r\n            registeredCount: 0,\r\n            active: true\r\n        });\r\n\r\n        emit EventCreated(eventId, msg.sender, title, capacity);\r\n        return eventId;\r\n    }\r\n\r\n    function registerForEvent(uint256 eventId) external {\r\n        Event storage currentEvent = events[eventId];\r\n\r\n        require(currentEvent.id != 0, \"Event does not exist\");\r\n        require(currentEvent.active, \"Event is inactive\");\r\n        require(!registered[eventId][msg.sender], \"Already registered\");\r\n        require(\r\n            currentEvent.registeredCount < currentEvent.capacity,\r\n            \"Event is full\"\r\n        );\r\n\r\n        registered[eventId][msg.sender] = true;\r\n        currentEvent.registeredCount++;\r\n\r\n        emit UserRegistered(eventId, msg.sender);\r\n    }\r\n\r\n    function markAttendance(\r\n        uint256 eventId,\r\n        address participant\r\n    ) external {\r\n        Event storage currentEvent = events[eventId];\r\n\r\n        require(currentEvent.id != 0, \"Event does not exist\");\r\n        require(msg.sender == currentEvent.organizer, \"Not organizer\");\r\n        require(registered[eventId][participant], \"Not registered\");\r\n        require(!attended[eventId][participant], \"Already attended\");\r\n\r\n        attended[eventId][participant] = true;\r\n\r\n        emit AttendanceMarked(eventId, participant);\r\n    }\r\n}\r\n"
+      }
+    }
+  }
+}

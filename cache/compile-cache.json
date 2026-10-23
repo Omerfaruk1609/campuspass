@@ -1,0 +1,16 @@
+{
+  "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\contracts\\CampusPass.sol": {
+    "jobHash": "solc-0_8_34-fbc1099d9eaf974943e38126a37cd7c986da14e7",
+    "isolated": false,
+    "compilerType": "solc",
+    "artifactPaths": [
+      "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\artifacts\\contracts\\CampusPass.sol\\CampusPass.json"
+    ],
+    "buildInfoPath": "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\artifacts\\build-info\\solc-0_8_34-fbc1099d9eaf974943e38126a37cd7c986da14e7.json",
+    "buildInfoOutputPath": "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\artifacts\\build-info\\solc-0_8_34-fbc1099d9eaf974943e38126a37cd7c986da14e7.output.json",
+    "typeFilePath": "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\artifacts\\contracts\\CampusPass.sol\\artifacts.d.ts",
+    "wasm": false,
+    "artifactsDirectory": "C:\\Users\\ÖMER FARUK\\Desktop\\Dosyalar\\VSCODE(1)\\campuspass\\artifacts",
+    "emitsTypeDeclarations": true
+  }
+}

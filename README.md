@@ -13,3 +13,14 @@ Web3-powered campus event registration and attendance verification
 npm install
 npm run dev
 ```
+
+## Smart Contract Tests
+
+Run the CampusPass contract tests on Hardhat's local simulated network:
+
+```bash
+npm test
+```
+
+The tests cover event creation, registration, capacity limits, organizer permissions,
+attendance, rejected duplicate actions, and isolation between events.
