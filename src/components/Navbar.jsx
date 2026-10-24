@@ -55,6 +55,13 @@ export default function Navbar({
           >
             Organizatör Paneli
           </button>
+          <button
+            type="button"
+            className={`nav-tab ${activeTab === "verify" ? "active" : ""}`}
+            onClick={() => onSelectTab("verify")}
+          >
+            Sertifika Doğrula
+          </button>
         </nav>
 
         <div className="wallet-controls">

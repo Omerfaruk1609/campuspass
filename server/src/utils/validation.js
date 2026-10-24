@@ -235,6 +235,31 @@ export const migrateMetadataBodySchema = z.object({
   records: z.array(z.record(z.any())).min(1).max(100),
 });
 
+export const CERTIFICATE_ID_REGEX = /^CP-CERT-[0-9A-F]{32}$/i;
+
+export const certificateIdParamSchema = z.object({
+  certificateId: z
+    .string()
+    .trim()
+    .regex(
+      CERTIFICATE_ID_REGEX,
+      "Geçersiz sertifika kimliği formatı (Beklenen: CP-CERT-<32 hex>)."
+    )
+    .transform((val) => val.toUpperCase()),
+});
+
+export const certificateIssueBodySchema = z.object({
+  eventId: z.coerce
+    .number()
+    .int("eventId tam sayı olmalıdır.")
+    .positive("eventId pozitif bir sayı olmalıdır."),
+  walletAddress: ethereumAddressSchema.optional(),
+  participantAddress: ethereumAddressSchema.optional(),
+  displayName: safeTextField("Sertifika görüntüleme adı", 80, false)
+    .optional()
+    .default(""),
+});
+
 export function parseWithZod(schema, payload) {
   const result = schema.safeParse(payload);
   if (!result.success) {

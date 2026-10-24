@@ -25,7 +25,8 @@
 * **Veritabanı & ORM:** PostgreSQL + Prisma ORM (`server/prisma/schema.prisma`)
 * **Kimlik Doğrulama:** SIWE (Sign-In with Ethereum / EIP-4361) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token`
 * **Blokzincir Etkileşimi & Indexer:** Ethers.js v6 (Salt-okunur RPC provider ile `EventCreated`, `UserRegistered`, `AttendanceMarked` indeksleme ve reorg koruması)
-* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (61 kapsamlı test)
+* **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` doğrulamalı, `CP-CERT-V1` SHA-256 + HMAC bütünlük mühürlü, yatay A4 PDF indirilebilir ve cüzdan bağlantısı gerektirmeden `/verify/:certificateId` üzerinden doğrulanabilir sertifika sistemi
+* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (75 kapsamlı Mocha testi + 5 gerçek PostgreSQL entegrasyon testi)
 
 ```text
 campuspass/
@@ -161,12 +162,19 @@ Backend sunucusu kapalıyken uygulama çökmez ve veri kaybı yaşanmaz:
 * `POST /api/events/:eventId/cancel` — Etkinliği organizatör yetkisiyle iptal etme.
 * `POST /api/events/:eventId/reactivate` — İptal edilmiş etkinliği yeniden aktifleştirme.
 
+### Dijital Katılım Sertifikası (Faz 10) Endpoint'leri
+* `POST /api/certificates` — Giriş yapmış (SIWE + CSRF) ve blokzincir üzerinde katılımı (`AttendanceMarked`) doğrulanmış öğrenci için idempotent dijital katılım sertifikası oluşturur (`201 Created` veya mükerrer istekte `200 OK`).
+* `GET /api/certificates/me` — Giriş yapmış öğrencinin kendi sertifikalarını listeler.
+* `GET /api/certificates/wallet/:walletAddress` — Öğrencinin herkese açık sertifikalarını (`displayName` hariç) listeler.
+* `GET /api/certificates/:certificateId` — Sertifika detaylarını (`displayName` hariç) döndürür (Cüzdan bağlantısı gerektirmez).
+* `GET /api/certificates/:certificateId/verify` — Sertifikayı 4 katmanda (PostgreSQL kaydı, `CP-CERT-V1` kriptografik bütünlük mührü, `IndexedAttendance` log kanıtı ve canlı Monad Testnet `CampusPass.sol` sözleşmesi) doğrular (`VERIFIED`, `NOT_FOUND`, `INVALID`, `UNVERIFIABLE_NOW`).
+
 ---
 
 ## 6. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha testlerini çalıştır (41 mevcut + 20 Backend, SIWE, Güvenlik & Indexer testi = 61 test)
+# Tüm Mocha testlerini çalıştır (61 mevcut + 14 Faz 10 Sertifika testi = 75 test)
 npm test
 
 # Yalnızca Faz 9 Backend, SIWE ve Indexer testlerini çalıştır
@@ -174,6 +182,7 @@ npm run test:backend
 
 # Prisma şema doğrulaması
 npm run db:validate
+npm --prefix server run db:validate
 
 # Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü (Mock testlerden ayrı)
 npm run test:postgres

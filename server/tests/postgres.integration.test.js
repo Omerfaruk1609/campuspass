@@ -99,6 +99,9 @@ async function runPostgresIntegrationSuite() {
     console.log("1. [BAŞARILI] Gerçek PostgreSQL bağlantısı doğrulandı:", rows);
 
     // Olası önceki yarım kalmış izole test kayıtlarını temizle (gerçek Monad 10143 verilerine dokunmaz)
+    await prisma.attendanceCertificate.deleteMany({
+      where: { chainId: TEST_CHAIN_ID, contractAddress: TEST_CONTRACT },
+    });
     await prisma.indexedAttendance.deleteMany({
       where: { chainId: TEST_CHAIN_ID, contractAddress: TEST_CONTRACT },
     });
@@ -200,7 +203,71 @@ async function runPostgresIntegrationSuite() {
     }
     console.log("4. [BAŞARILI] Atomik $transaction rollback davranışı doğrulandı.");
 
-    // İzole test kaydını temizle
+    // 5. Faz 10 — AttendanceCertificate CRUD ve Unique Constraint (P2002) Testi
+    const createdCert = await prisma.attendanceCertificate.create({
+      data: {
+        certificateId: "CP-CERT-ABCD1234ABCD1234ABCD1234ABCD1234",
+        version: "CP-CERT-V1",
+        status: "ACTIVE",
+        chainId: TEST_CHAIN_ID,
+        contractAddress: TEST_CONTRACT,
+        eventId: TEST_EVENT_ID,
+        eventTitle: "PostgreSQL Entegrasyon Test Etkinliği",
+        organizerAddress: TEST_ORGANIZER,
+        participantAddress: TEST_STUDENT,
+        displayName: "Gerçek PostgreSQL Test Öğrencisi",
+        attendanceTxHash:
+          "0x2222222222222222222222222222222222222222222222222222222222222222",
+        attendanceBlockNumber: 120,
+        attendanceLogIndex: 0,
+        certificateHash:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+        integritySignature:
+          "0x4444444444444444444444444444444444444444444444444444444444444444",
+      },
+    });
+
+    let certUniqueErrorCaught = false;
+    try {
+      await prisma.attendanceCertificate.create({
+        data: {
+          certificateId: "CP-CERT-99991234ABCD1234ABCD1234ABCD1234",
+          version: "CP-CERT-V1",
+          status: "ACTIVE",
+          chainId: TEST_CHAIN_ID,
+          contractAddress: TEST_CONTRACT,
+          eventId: TEST_EVENT_ID,
+          eventTitle: "Duplicate Sertifika Denemesi",
+          organizerAddress: TEST_ORGANIZER,
+          participantAddress: TEST_STUDENT,
+          attendanceTxHash:
+            "0x5555555555555555555555555555555555555555555555555555555555555555",
+          attendanceBlockNumber: 121,
+          attendanceLogIndex: 1,
+          certificateHash:
+            "0x6666666666666666666666666666666666666666666666666666666666666666",
+          integritySignature:
+            "0x7777777777777777777777777777777777777777777777777777777777777777",
+        },
+      });
+    } catch (err) {
+      if (err.code === "P2002") {
+        certUniqueErrorCaught = true;
+      } else {
+        throw err;
+      }
+    }
+    if (!certUniqueErrorCaught) {
+      throw new Error(
+        "AttendanceCertificate cert_event_participant_unique (P2002) ihlali yakalanmadı!"
+      );
+    }
+    console.log(
+      "5. [BAŞARILI] Faz 10 AttendanceCertificate CRUD ve Unique Constraint (P2002) doğrulandı."
+    );
+
+    // İzole test kayıtlarını temizle
+    await prisma.attendanceCertificate.delete({ where: { id: createdCert.id } });
     await prisma.eventMetadata.delete({ where: { id: createdMeta.id } });
     console.log("=== Tüm Gerçek PostgreSQL Entegrasyon Testleri Başarıyla Tamamlandı ===");
   } finally {

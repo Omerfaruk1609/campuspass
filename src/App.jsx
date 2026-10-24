@@ -4,6 +4,7 @@ import Navbar from "./components/Navbar";
 import HomePage from "./pages/HomePage";
 import EventPage from "./pages/EventPage";
 import StudentProfile from "./pages/StudentProfile";
+import CertificateVerificationPage from "./pages/CertificateVerificationPage";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
@@ -37,6 +38,15 @@ import {
 } from "./utils/apiClient";
 import "./App.css";
 
+function parseVerifyCertificateIdFromUrl() {
+  if (typeof window === "undefined" || !window.location?.pathname) {
+    return null;
+  }
+  const match = window.location.pathname.match(/^\/verify(?:\/([^/?#]+))?\/?$/i);
+  if (!match) return null;
+  return match[1] ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
+}
+
 export default function App() {
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
@@ -54,8 +64,13 @@ export default function App() {
   const [pendingSyncItems, setPendingSyncItems] = useState([]);
   const [syncingPending, setSyncingPending] = useState(false);
 
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState(() =>
+    parseVerifyCertificateIdFromUrl() !== null ? "verify" : "all"
+  );
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [verifyCertificateId, setVerifyCertificateId] = useState(
+    () => parseVerifyCertificateIdFromUrl() || ""
+  );
 
   const [txState, setTxState] = useState({
     busy: false,
@@ -780,6 +795,31 @@ export default function App() {
 
   const selectedEvent = events.find((e) => e.id === selectedEventId) || null;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = () => {
+      const parsedId = parseVerifyCertificateIdFromUrl();
+      if (parsedId !== null) {
+        setVerifyCertificateId(parsedId);
+        setSelectedEventId(null);
+        setActiveTab("verify");
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  function handleOpenVerifyPage(certificateId = "") {
+    const cleanId = String(certificateId || "").trim().toUpperCase();
+    setVerifyCertificateId(cleanId);
+    setSelectedEventId(null);
+    setActiveTab("verify");
+    if (typeof window !== "undefined" && window.history?.pushState) {
+      const nextUrl = cleanId ? `/verify/${encodeURIComponent(cleanId)}` : "/verify";
+      window.history.pushState({}, "", nextUrl);
+    }
+  }
+
   return (
     <div className="app-shell">
       <Navbar
@@ -789,6 +829,16 @@ export default function App() {
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setSelectedEventId(null);
+          if (typeof window !== "undefined" && window.history?.pushState) {
+            if (tab === "verify") {
+              const nextUrl = verifyCertificateId
+                ? `/verify/${encodeURIComponent(verifyCertificateId)}`
+                : "/verify";
+              window.history.pushState({}, "", nextUrl);
+            } else if (window.location.pathname.startsWith("/verify")) {
+              window.history.pushState({}, "", "/");
+            }
+          }
         }}
         onConnectWallet={handleConnectWallet}
         onSwitchNetwork={handleSwitchNetwork}
@@ -868,6 +918,17 @@ export default function App() {
             onUpdateMetadata={handleUpdateEventMetadata}
             txState={txState}
           />
+        ) : activeTab === "verify" ? (
+          <CertificateVerificationPage
+            key={`verify-${verifyCertificateId || "empty"}`}
+            initialCertificateId={verifyCertificateId}
+            onBackToEvents={() => {
+              setActiveTab("all");
+              if (typeof window !== "undefined" && window.history?.pushState) {
+                window.history.pushState({}, "", "/");
+              }
+            }}
+          />
         ) : activeTab === "student" ? (
           <StudentProfile
             key={`profile-${account || "guest"}-${chainId || "none"}`}
@@ -877,6 +938,7 @@ export default function App() {
             onSwitchNetwork={handleSwitchNetwork}
             onSelectEvent={(id) => setSelectedEventId(id)}
             onExploreEvents={() => setActiveTab("all")}
+            onOpenVerifyPage={handleOpenVerifyPage}
             isConnecting={isConnecting}
           />
         ) : (

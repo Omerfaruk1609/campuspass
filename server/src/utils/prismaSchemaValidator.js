@@ -14,6 +14,10 @@ const DEFAULT_INIT_MIGRATION_PATH = path.resolve(
   __dirname,
   "../../prisma/migrations/20261024000000_init/migration.sql"
 );
+const DEFAULT_PHASE10_MIGRATION_PATH = path.resolve(
+  __dirname,
+  "../../prisma/migrations/20261024120000_phase10_attendance_certificates/migration.sql"
+);
 
 const REQUIRED_MODELS = {
   EventMetadata: [
@@ -77,11 +81,21 @@ const REQUIRED_MODELS = {
   Community: ["id", "slug", "name", "leadOrganizerAddress"],
   AttendanceCertificate: [
     "id",
+    "certificateId",
+    "version",
+    "status",
     "chainId",
     "contractAddress",
     "eventId",
+    "eventTitle",
+    "organizerAddress",
     "participantAddress",
+    "attendanceTxHash",
+    "attendanceBlockNumber",
+    "attendanceLogIndex",
     "certificateHash",
+    "integritySignature",
+    "issuedAt",
   ],
 };
 
@@ -183,6 +197,17 @@ export function validatePrismaSchemaFile(schemaPath = DEFAULT_SCHEMA_PATH) {
       if (!migrationSql.includes(`CREATE TABLE "${modelName}"`)) {
         throw new Error(`migration.sql içinde '${modelName}' tablosu (CREATE TABLE) eksik.`);
       }
+    }
+    if (!fs.existsSync(DEFAULT_PHASE10_MIGRATION_PATH)) {
+      throw new Error(
+        `Faz 10 sertifika migration.sql bulunamadı: ${DEFAULT_PHASE10_MIGRATION_PATH}`
+      );
+    }
+    const phase10Sql = fs.readFileSync(DEFAULT_PHASE10_MIGRATION_PATH, "utf8");
+    if (!phase10Sql.includes('ALTER TABLE "AttendanceCertificate"')) {
+      throw new Error(
+        "Faz 10 migration.sql içinde 'ALTER TABLE \"AttendanceCertificate\"' ifadesi eksik."
+      );
     }
   }
 
