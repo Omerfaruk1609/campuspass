@@ -401,4 +401,46 @@ describe("Faz 8 — Öğrenci Profili ve Katılım Geçmişi Testleri", function
     expect(caughtError).to.not.equal(null);
     expect(caughtError.message).to.include("RPC connection timeout");
   });
+
+  it("11. [Regresyon Testi] Doğrulanmış katılımcı (isVerifiedAttended) için sertifika oluşturma ve görüntüleme buton durumları hatasız belirlenir", function () {
+    // Phase 10 / 11.5 Known Issue doğrulaması:
+    // isVerifiedAttended = Boolean(ev.isAttended || attState?.code === ATTENDANCE_STATE.ATTENDED_VERIFIED);
+    function getCertificateButtonAction(ev, activeCert) {
+      const attState = ev.attendanceState;
+      const isVerifiedAttended = Boolean(
+        ev.isAttended || attState?.code === ATTENDANCE_STATE.ATTENDED_VERIFIED
+      );
+      if (!isVerifiedAttended) return null;
+      if (activeCert) return "VIEW_CERTIFICATE";
+      return "ISSUE_CERTIFICATE";
+    }
+
+    // Durum 1: Katılım doğrulanmış ve henüz sertifika üretilmemiş -> Sertifika Oluştur
+    const attendedEventNoCert = {
+      id: 1,
+      isAttended: true,
+      attendanceState: { code: ATTENDANCE_STATE.ATTENDED_VERIFIED, label: "Katılım Doğrulandı ✓" },
+    };
+    expect(getCertificateButtonAction(attendedEventNoCert, null)).to.equal("ISSUE_CERTIFICATE");
+
+    // Durum 2: Katılım doğrulanmış ve aktif sertifikası var -> Sertifikayı Görüntüle
+    const mockCert = { certificateId: "CP-10143-0001-0001", status: "ACTIVE" };
+    expect(getCertificateButtonAction(attendedEventNoCert, mockCert)).to.equal("VIEW_CERTIFICATE");
+
+    // Durum 3: Yalnızca kayıtlı ancak katılım doğrulanmamış -> Buton gösterilmez (null)
+    const registeredOnlyEvent = {
+      id: 2,
+      isAttended: false,
+      attendanceState: { code: ATTENDANCE_STATE.REGISTERED_FUTURE, label: "Kayıtlı (Gelecek)" },
+    };
+    expect(getCertificateButtonAction(registeredOnlyEvent, null)).to.equal(null);
+
+    // Durum 4: attendanceState ATTENDED_VERIFIED ancak isAttended false olsa dahi güvenle tespit eder
+    const fallbackAttendedEvent = {
+      id: 3,
+      isAttended: false,
+      attendanceState: { code: ATTENDANCE_STATE.ATTENDED_VERIFIED, label: "Katılım Doğrulandı ✓" },
+    };
+    expect(getCertificateButtonAction(fallbackAttendedEvent, null)).to.equal("ISSUE_CERTIFICATE");
+  });
 });

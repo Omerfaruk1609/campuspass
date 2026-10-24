@@ -38,6 +38,7 @@ server/data/*.json
 *.sqlite-journal
 
 # Hardhat local runtime history & deployments
+Yapıştırılan*.txt
 cache/console-history.txt
 ignition/deployments/
 coverage.json
