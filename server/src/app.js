@@ -1,5 +1,6 @@
 import { createAuthController } from "./controllers/authController.js";
 import { createCertificateController } from "./controllers/certificateController.js";
+import { createCommunityController } from "./controllers/communityController.js";
 import { createEventController } from "./controllers/eventController.js";
 import { createHealthController } from "./controllers/healthController.js";
 import { createOrganizerAnalyticsController } from "./controllers/organizerAnalyticsController.js";
@@ -13,6 +14,7 @@ import {
 } from "./middleware/securityMiddleware.js";
 import { createAuthRoutes } from "./routes/authRoutes.js";
 import { createCertificateRoutes } from "./routes/certificateRoutes.js";
+import { createCommunityRoutes } from "./routes/communityRoutes.js";
 import { createEventRoutes } from "./routes/eventRoutes.js";
 import { createHealthRoutes } from "./routes/healthRoutes.js";
 import { createOrganizerAnalyticsRoutes } from "./routes/organizerAnalyticsRoutes.js";
@@ -20,6 +22,7 @@ import { createStudentRoutes } from "./routes/studentRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createBlockchainService } from "./services/blockchainService.js";
 import { createCertificateService } from "./services/certificateService.js";
+import { createCommunityService } from "./services/communityService.js";
 import { createEventService } from "./services/eventService.js";
 import { createOrganizerAnalyticsService } from "./services/organizerAnalyticsService.js";
 import { createTransactionalPrismaStore } from "./services/prismaClient.js";
@@ -86,6 +89,10 @@ export function buildCampusPassApp({
     eventService,
   });
 
+  const communityService = createCommunityService({
+    prisma,
+  });
+
   const healthController = createHealthController({
     prisma,
     blockchainService,
@@ -99,6 +106,9 @@ export function buildCampusPassApp({
   });
   const organizerAnalyticsController = createOrganizerAnalyticsController({
     organizerAnalyticsService,
+  });
+  const communityController = createCommunityController({
+    communityService,
   });
 
   const { requireOrganizerSession } = createAuthMiddleware({ authService });
@@ -149,6 +159,13 @@ export function buildCampusPassApp({
       requireOrganizerSession,
     })
   );
+  app.use(
+    "/api/communities",
+    createCommunityRoutes({
+      communityController,
+      requireAuthSession: requireOrganizerSession,
+    })
+  );
 
   app.use(createErrorHandler());
 
@@ -162,6 +179,7 @@ export function buildCampusPassApp({
       studentService,
       certificateService,
       organizerAnalyticsService,
+      communityService,
     },
   };
 }

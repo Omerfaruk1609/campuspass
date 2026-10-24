@@ -27,7 +27,8 @@
 * **Blokzincir Etkileşimi & Indexer:** Ethers.js v6 (Salt-okunur RPC provider ile `EventCreated`, `UserRegistered`, `AttendanceMarked` indeksleme ve reorg koruması)
 * **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` doğrulamalı, `CP-CERT-V1` SHA-256 + HMAC bütünlük mühürlü, yatay A4 PDF indirilebilir ve cüzdan bağlantısı gerektirmeden `/verify/:certificateId` üzerinden doğrulanabilir sertifika sistemi
 * **Organizatör Yönetim Paneli & Analitik (Faz 11):** Üniversite topluluklarının etkinliklerini, dönüşüm ve katılım oranlarını, tekil öğrenci erişimlerini yönetebildiği KPI kartları, trend grafikleri, sayfalanmış katılımcı tablosu, formula injection korumalı CSV dışa aktarımı ve anlık indexer senkronizasyon göstergesi
-* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (91 kapsamlı Mocha testi + 5 gerçek PostgreSQL entegrasyon testi)
+* **Üniversite Topluluk Yönetim Sistemi (Faz 12):** Üniversite kulüp ve topluluklarının oluşturulması, profilleri, rol tabanlı yetkilendirme (OWNER, ADMIN, MEMBER), üyelik başvuru ve onay döngüsü, tek kurucu ayrılma koruması, güvenli etkinlik-topluluk ilişkilendirmesi (anti-hijacking) ve topluluk analitiği
+* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (103 kapsamlı Mocha testi + 6 gerçek PostgreSQL entegrasyon testi)
 
 ```text
 campuspass/
@@ -178,13 +179,35 @@ Backend sunucusu kapalıyken uygulama çökmez ve veri kaybı yaşanmaz:
 * `GET /api/organizer/events/:eventId/export` — Etkinlik katılımcı listesini veya etkinlik özetini CSV formatında indirir. Spreadsheet Formula Injection saldırılarına karşı güvenli kaçış mekanizması içerir (`=`, `+`, `-`, `@` ön ekleri güvenli formatlanır).
 * `GET /api/organizer/timeseries` — Organizatörün etkinlikleri arasındaki kayıt ve katılım sayılarını karşılaştırmalı zaman serisi grafiği için döner.
 
+### Üniversite Topluluk Yönetim Sistemi (Faz 12) Endpoint'leri
+* `GET /api/communities` — Aktif toplulukları sayfalanmış, kategori ve arama filtreleriyle listeler (Herkese açık).
+* `GET /api/communities/:idOrSlug` — Topluluk detay profili, üye sayısı, etkinlik sayısı ve çağıran cüzdanın rolünü döner (Herkese açık).
+* `GET /api/communities/:idOrSlug/events` — Toplulukla ilişkilendirilmiş güncel ve geçmiş etkinlikleri listeler (Herkese açık).
+* `GET /api/communities/me` — Oturum açmış öğrencinin üye olduğu ve başvuru yaptığı toplulukları döner (SIWE oturumu zorunlu).
+* `POST /api/communities` — Yeni üniversite topluluğu oluşturur; oluşturan cüzdan otomatik `OWNER` atanır (SIWE oturumu zorunlu).
+* `POST /api/communities/:idOrSlug/join` — Topluluğa katılım başvurusu yapar (`PENDING` durumu, SIWE oturumu zorunlu).
+* `POST /api/communities/:idOrSlug/leave` — Topluluktan ayrılır; topluluğun tek kurucusu/sahibi (`OWNER`) topluluğu sahipsiz bırakarak ayrılamaz.
+* `PATCH /api/communities/:idOrSlug` — Topluluk bilgilerini günceller (`OWNER` veya `ADMIN` yetkisi gerektirir).
+* `GET /api/communities/:idOrSlug/members` — Topluluk üyelerini listeler (`OWNER` veya `ADMIN` yetkisi gerektirir).
+* `GET /api/communities/:idOrSlug/applications` — Onay bekleyen üyelik başvurularını listeler (`OWNER` veya `ADMIN` yetkisi gerektirir).
+* `POST /api/communities/:idOrSlug/applications/:memberId/approve` — Üyelik başvurusunu onaylar (`ACTIVE` yapar).
+* `POST /api/communities/:idOrSlug/applications/:memberId/reject` — Üyelik başvurusunu reddeder (`REJECTED` yapar).
+* `PATCH /api/communities/:idOrSlug/members/:memberId/role` — Üyenin rolünü değiştirir (`OWNER` yetkisi gerektirir; `ADMIN` veya `MEMBER` atanabilir).
+* `DELETE /api/communities/:idOrSlug/members/:memberId` — Üyeyi topluluktan çıkarır (`ADMIN`, `OWNER`'ı veya başka bir `ADMIN`'i çıkaramaz).
+* `POST /api/communities/:idOrSlug/events/link` — Etkinliği toplulukla ilişkilendirir (Anti-Hijacking: Çağıran kişi topluluk yöneticisi ve etkinliğin zincir üstü organizatörü olmalıdır).
+* `DELETE /api/communities/:idOrSlug/events/unlink` — Etkinlik ile topluluk arasındaki ilişkiyi kaldırır.
+* `GET /api/communities/:idOrSlug/analytics` — Topluluğun etkinlik katılım, doluluk ve üye performans analitiğini döner (`OWNER` veya `ADMIN` yetkisi gerektirir).
+
 ---
 
 ## 6. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha testlerini çalıştır (75 mevcut + 16 Faz 11 Analitik testi = 91 test)
+# Tüm Mocha testlerini çalıştır (92 mevcut + 11 Faz 12 Topluluk Yönetim testi = 103 test)
 npm test
+
+# Yalnızca Faz 12 Topluluk Yönetim Sistemi testlerini çalıştır
+npx hardhat test test/CommunityManagementPhase12.js
 
 # Yalnızca Faz 9 Backend, SIWE ve Indexer testlerini çalıştır
 npm run test:backend
@@ -192,6 +215,9 @@ npm run test:backend
 # Prisma şema doğrulaması
 npm run db:validate
 npm --prefix server run db:validate
+
+# Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü (Mock testlerden ayrı, 6 entegrasyon testi)
+npm run test:postgres
 
 # Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü (Mock testlerden ayrı)
 npm run test:postgres

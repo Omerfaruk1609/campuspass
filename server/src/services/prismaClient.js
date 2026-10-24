@@ -44,6 +44,20 @@ function matchesWhere(row, where = {}) {
   for (const [key, expected] of Object.entries(where)) {
     if (expected === undefined) continue;
 
+    if (key === "OR" && Array.isArray(expected)) {
+      if (!expected.some((subWhere) => matchesWhere(row, subWhere))) {
+        return false;
+      }
+      continue;
+    }
+
+    if (key === "AND" && Array.isArray(expected)) {
+      if (!expected.every((subWhere) => matchesWhere(row, subWhere))) {
+        return false;
+      }
+      continue;
+    }
+
     // Bileşik unique anahtarlar
     if (key === "chainId_contractAddress_eventId" && typeof expected === "object") {
       if (
@@ -100,6 +114,17 @@ function matchesWhere(row, where = {}) {
       continue;
     }
 
+    if (key === "community_member_unique" && typeof expected === "object") {
+      if (
+        String(row.communityId) !== String(expected.communityId) ||
+        String(row.walletAddress).toLowerCase() !==
+          String(expected.walletAddress).toLowerCase()
+      ) {
+        return false;
+      }
+      continue;
+    }
+
     const actual = row[key];
     if (typeof expected === "string" && expected.startsWith("0x") && typeof actual === "string") {
       if (actual.toLowerCase() !== expected.toLowerCase()) return false;
@@ -109,6 +134,11 @@ function matchesWhere(row, where = {}) {
       }
       if ("equals" in expected) {
         if (actual !== expected.equals) return false;
+      }
+      if ("contains" in expected) {
+        const actualStr = String(actual || "").toLowerCase();
+        const searchStr = String(expected.contains || "").toLowerCase();
+        if (!actualStr.includes(searchStr)) return false;
       }
       if ("not" in expected) {
         if (actual === expected.not) return false;
@@ -155,6 +185,7 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
     authNonce: [],
     organizerSession: [],
     community: [],
+    communityMember: [],
     attendanceCertificate: [],
   };
 
@@ -258,9 +289,16 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
       if (dupSlug) {
         throw createUniqueConstraintError(["slug"]);
       }
-      const dupName = rows.find((r) => r.name === candidate.name);
-      if (dupName) {
-        throw createUniqueConstraintError(["name"]);
+    }
+
+    if (tableName === "communityMember") {
+      const dup = rows.find(
+        (r) =>
+          String(r.communityId) === String(candidate.communityId) &&
+          String(r.walletAddress).toLowerCase() === String(candidate.walletAddress).toLowerCase()
+      );
+      if (dup) {
+        throw createUniqueConstraintError(["communityId", "walletAddress"]);
       }
     }
 
@@ -443,6 +481,7 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
     authNonce: buildDelegate("authNonce"),
     organizerSession: buildDelegate("organizerSession"),
     community: buildDelegate("community"),
+    communityMember: buildDelegate("communityMember"),
     attendanceCertificate: buildDelegate("attendanceCertificate"),
 
     /**
@@ -461,6 +500,7 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
         authNonce: buildDelegate("authNonce", false),
         organizerSession: buildDelegate("organizerSession", false),
         community: buildDelegate("community", false),
+        communityMember: buildDelegate("communityMember", false),
         attendanceCertificate: buildDelegate("attendanceCertificate", false),
       };
 

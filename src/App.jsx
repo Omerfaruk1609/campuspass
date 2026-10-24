@@ -8,6 +8,9 @@ import StudentProfile from "./pages/StudentProfile";
 import CertificateVerificationPage from "./pages/CertificateVerificationPage";
 import OrganizerDashboardPage from "./pages/OrganizerDashboardPage";
 import OrganizerEventAnalyticsPage from "./pages/OrganizerEventAnalyticsPage";
+import CommunityDiscoveryPage from "./pages/CommunityDiscoveryPage";
+import CommunityProfilePage from "./pages/CommunityProfilePage";
+import CommunityManagePage from "./pages/CommunityManagePage";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
@@ -72,6 +75,8 @@ export default function App() {
   );
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [organizerAnalyticsEventId, setOrganizerAnalyticsEventId] = useState(null);
+  const [selectedCommunitySlug, setSelectedCommunitySlug] = useState(null);
+  const [manageCommunitySlug, setManageCommunitySlug] = useState(null);
   const [verifyCertificateId, setVerifyCertificateId] = useState(
     () => parseVerifyCertificateIdFromUrl() || ""
   );
@@ -834,6 +839,8 @@ export default function App() {
           setActiveTab(tab);
           setSelectedEventId(null);
           setOrganizerAnalyticsEventId(null);
+          setSelectedCommunitySlug(null);
+          setManageCommunitySlug(null);
           if (typeof window !== "undefined" && window.history?.pushState) {
             if (tab === "verify") {
               const nextUrl = verifyCertificateId
@@ -935,6 +942,33 @@ export default function App() {
               setSelectedEventId(id);
             }}
           />
+        ) : manageCommunitySlug !== null ? (
+          <CommunityManagePage
+            key={`community-manage-${manageCommunitySlug}-${account || "guest"}`}
+            communitySlug={manageCommunitySlug}
+            account={account}
+            chainId={chainId}
+            onBack={() => setManageCommunitySlug(null)}
+            onSelectEvent={(id) => setSelectedEventId(id)}
+          />
+        ) : selectedCommunitySlug !== null ? (
+          <CommunityProfilePage
+            key={`community-profile-${selectedCommunitySlug}-${account || "guest"}`}
+            communitySlug={selectedCommunitySlug}
+            account={account}
+            chainId={chainId}
+            onBack={() => setSelectedCommunitySlug(null)}
+            onSelectEvent={(id) => setSelectedEventId(id)}
+            onManageCommunity={(slug) => setManageCommunitySlug(slug)}
+          />
+        ) : activeTab === "communities" ? (
+          <CommunityDiscoveryPage
+            key={`community-discovery-${account || "guest"}`}
+            account={account}
+            chainId={chainId}
+            onSelectCommunity={(slug) => setSelectedCommunitySlug(slug)}
+            onManageCommunity={(slug) => setManageCommunitySlug(slug)}
+          />
         ) : activeTab === "verify" ? (
           <CertificateVerificationPage
             key={`verify-${verifyCertificateId || "empty"}`}
@@ -957,6 +991,16 @@ export default function App() {
             onExploreEvents={() => setActiveTab("all")}
             onOpenVerifyPage={handleOpenVerifyPage}
             isConnecting={isConnecting}
+            onNavigateToCommunity={(slug) => {
+              setActiveTab("communities");
+              setSelectedCommunitySlug(slug);
+              setManageCommunitySlug(null);
+            }}
+            onExploreCommunities={() => {
+              setActiveTab("communities");
+              setSelectedCommunitySlug(null);
+              setManageCommunitySlug(null);
+            }}
           />
         ) : activeTab === "organizer" ? (
           <OrganizerDashboardPage
@@ -993,6 +1037,8 @@ export default function App() {
           setActiveTab(tab);
           setSelectedEventId(null);
           setOrganizerAnalyticsEventId(null);
+          setSelectedCommunitySlug(null);
+          setManageCommunitySlug(null);
           if (typeof window !== "undefined" && window.history?.pushState) {
             if (tab === "verify") {
               const nextUrl = verifyCertificateId

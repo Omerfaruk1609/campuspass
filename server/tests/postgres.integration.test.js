@@ -266,9 +266,100 @@ async function runPostgresIntegrationSuite() {
       "5. [BAŞARILI] Faz 10 AttendanceCertificate CRUD ve Unique Constraint (P2002) doğrulandı."
     );
 
+    // 6. Faz 12 — Community ve CommunityMember CRUD, Unique Constraint (P2002) Testi
+    const TEST_COMM_SLUG = "test-postgres-toplulugu-phase12";
+    // Olası eski test kalıntısını temizle
+    await prisma.communityMember.deleteMany({
+      where: { community: { slug: TEST_COMM_SLUG } },
+    });
+    await prisma.community.deleteMany({
+      where: { slug: TEST_COMM_SLUG },
+    });
+
+    const createdComm = await prisma.community.create({
+      data: {
+        name: "Test PostgreSQL Topluluğu Faz 12",
+        slug: TEST_COMM_SLUG,
+        leadOrganizerAddress: TEST_ORGANIZER,
+        description: "PostgreSQL entegrasyon testi için topluluk kaydı",
+        shortDescription: "PostgreSQL test",
+        universityName: "Monad Üniversitesi",
+        category: "Yazılım",
+        createdByWallet: TEST_ORGANIZER,
+        status: "ACTIVE",
+        members: {
+          create: {
+            walletAddress: TEST_ORGANIZER,
+            role: "OWNER",
+            status: "ACTIVE",
+          },
+        },
+      },
+      include: { members: true },
+    });
+
+    if (!createdComm.id || createdComm.members.length !== 1 || createdComm.members[0].role !== "OWNER") {
+      throw new Error("Community + CommunityMember oluşturma doğrulaması başarısız.");
+    }
+
+    // İkinci üye ekle (MEMBER, PENDING)
+    const pendingMember = await prisma.communityMember.create({
+      data: {
+        communityId: createdComm.id,
+        walletAddress: TEST_STUDENT,
+        role: "MEMBER",
+        status: "PENDING",
+      },
+    });
+
+    // Durum güncelleme: PENDING -> ACTIVE
+    const activatedMember = await prisma.communityMember.update({
+      where: { id: pendingMember.id },
+      data: { status: "ACTIVE" },
+    });
+    if (activatedMember.status !== "ACTIVE") {
+      throw new Error("CommunityMember status update doğrulaması başarısız.");
+    }
+
+    // Unique Constraint: Aynı cüzdan aynı topluluğa tekrar eklenemez (community_member_unique)
+    let memberUniqueCaught = false;
+    try {
+      await prisma.communityMember.create({
+        data: {
+          communityId: createdComm.id,
+          walletAddress: TEST_STUDENT,
+          role: "MEMBER",
+          status: "PENDING",
+        },
+      });
+    } catch (err) {
+      if (err.code === "P2002") {
+        memberUniqueCaught = true;
+      } else {
+        throw err;
+      }
+    }
+    if (!memberUniqueCaught) {
+      throw new Error("CommunityMember community_member_unique (P2002) ihlali yakalanmadı!");
+    }
+
+    // Rol güncelleme: MEMBER -> ADMIN
+    const promotedMember = await prisma.communityMember.update({
+      where: { id: pendingMember.id },
+      data: { role: "ADMIN" },
+    });
+    if (promotedMember.role !== "ADMIN") {
+      throw new Error("CommunityMember role update doğrulaması başarısız.");
+    }
+    console.log(
+      "6. [BAŞARILI] Faz 12 Community & CommunityMember CRUD, P2002 Unique Constraint ve Rol/Durum döngüsü doğrulandı."
+    );
+
     // İzole test kayıtlarını temizle
     await prisma.attendanceCertificate.delete({ where: { id: createdCert.id } });
     await prisma.eventMetadata.delete({ where: { id: createdMeta.id } });
+    await prisma.communityMember.deleteMany({ where: { communityId: createdComm.id } });
+    await prisma.community.delete({ where: { id: createdComm.id } });
     console.log("=== Tüm Gerçek PostgreSQL Entegrasyon Testleri Başarıyla Tamamlandı ===");
   } finally {
     await prisma.$disconnect();

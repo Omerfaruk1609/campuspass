@@ -635,3 +635,298 @@ export function removePendingMetadataSync(compositeKey) {
     }
   }
 }
+
+// ============================================================================
+// FAZ 12 — ÜNİVERSİTE TOPLULUK YÖNETİM SİSTEMİ İSTEMCİ API METOTLARI
+// ============================================================================
+
+export async function fetchCommunitiesFromBackend({
+  search = "",
+  category = "ALL",
+  university = "ALL",
+  page = 1,
+  limit = 20,
+} = {}) {
+  const params = new URLSearchParams();
+  if (search) params.append("search", search);
+  if (category && category !== "ALL") params.append("category", category);
+  if (university && university !== "ALL") params.append("university", university);
+  params.append("page", String(page));
+  params.append("limit", String(limit));
+
+  const res = await fetch(`${API_BASE_URL}/communities?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchCommunityProfileFromBackend(idOrSlug) {
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}`, {
+    method: "GET",
+    headers: { credentials: "include", Accept: "application/json" },
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchCommunityEventsFromBackend(idOrSlug, { page = 1, limit = 20 } = {}) {
+  const params = new URLSearchParams();
+  params.append("page", String(page));
+  params.append("limit", String(limit));
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function createCommunityOnBackend(payload) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function joinCommunityOnBackend(idOrSlug) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/join`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function leaveCommunityOnBackend(idOrSlug) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/leave`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchMyCommunitiesFromBackend() {
+  const res = await fetch(`${API_BASE_URL}/communities/me`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchCommunityMembersFromBackend(idOrSlug, { status = "ACTIVE", search = "", page = 1, limit = 50 } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.append("status", status);
+  if (search) params.append("search", search);
+  params.append("page", String(page));
+  params.append("limit", String(limit));
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "include",
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchCommunityApplicationsFromBackend(idOrSlug, { page = 1, limit = 50 } = {}) {
+  const params = new URLSearchParams();
+  params.append("page", String(page));
+  params.append("limit", String(limit));
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "include",
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function approveCommunityApplicationOnBackend(idOrSlug, memberId) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/approve`,
+    {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({}),
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function rejectCommunityApplicationOnBackend(idOrSlug, memberId) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/reject`,
+    {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({}),
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function removeCommunityMemberOnBackend(idOrSlug, memberId) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}`,
+    {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function updateCommunityMemberRoleOnBackend(idOrSlug, memberId, role) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(
+    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}/role`,
+    {
+      method: "PATCH",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ role }),
+    }
+  );
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function updateCommunityOnBackend(idOrSlug, payload) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}`, {
+    method: "PATCH",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function linkEventToCommunityOnBackend(idOrSlug, { eventId, chainId, contractAddress }) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events/link`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({ eventId, chainId, contractAddress }),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function unlinkEventFromCommunityOnBackend(idOrSlug, { eventId, chainId, contractAddress }) {
+  const headers = { "Content-Type": "application/json" };
+  if (activeAuthState.csrfToken) {
+    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events/unlink`, {
+    method: "DELETE",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({ eventId, chainId, contractAddress }),
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}
+
+export async function fetchCommunityAnalyticsFromBackend(idOrSlug) {
+  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/analytics`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  const data = await res.json();
+  validateApiResponseEnvelope(data);
+  return data.data;
+}

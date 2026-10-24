@@ -18,9 +18,11 @@ import {
   ensureStudentSiweSession,
   fetchEventsMetadataFromBackend,
   fetchMyCertificatesFromBackend,
+  fetchMyCommunitiesFromBackend,
   fetchWalletCertificatesFromBackend,
   getActiveAuthState,
   issueCertificateOnBackend,
+  leaveCommunityOnBackend,
 } from "../utils/apiClient";
 import {
   buildVerificationUrl,
@@ -94,11 +96,13 @@ export default function StudentProfile({
   onExploreEvents,
   onOpenVerifyPage,
   isConnecting,
+  onNavigateToCommunity,
+  onExploreCommunities,
 }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [loading, setLoading] = useState(() => Boolean(account));
   const [rpcError, setRpcError] = useState(null);
-  const [activeProfileTab, setActiveProfileTab] = useState("events"); // events | certs | timeline
+  const [activeProfileTab, setActiveProfileTab] = useState("events"); // events | certs | timeline | communities
   const [sectionFilter, setSectionFilter] = useState("all"); // all | upcoming | attended | past
   const [timelineDirection, setTimelineDirection] = useState("DESC");
 
@@ -111,6 +115,11 @@ export default function StudentProfile({
   const [selectedCertificateModal, setSelectedCertificateModal] = useState(null);
   const [copiedCertId, setCopiedCertId] = useState(null);
   const [copiedWallet, setCopiedWallet] = useState(false);
+
+  // Faz 12 — Üniversite Toplulukları Durumu
+  const [myCommunities, setMyCommunities] = useState({ joined: [], pending: [] });
+  const [loadingCommunities, setLoadingCommunities] = useState(false);
+  const [leavingCommunitySlug, setLeavingCommunitySlug] = useState(null);
 
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
 
@@ -144,6 +153,58 @@ export default function StudentProfile({
     }
   }, []);
 
+  const loadMyCommunities = useCallback(async () => {
+    if (!account) {
+      setMyCommunities({ joined: [], pending: [] });
+      return;
+    }
+    setLoadingCommunities(true);
+    try {
+      const data = await fetchMyCommunitiesFromBackend();
+      setMyCommunities({
+        joined: Array.isArray(data?.joined) ? data.joined : [],
+        pending: Array.isArray(data?.pending) ? data.pending : [],
+      });
+    } catch {
+      // Backend çevrimdışı fallback veya oturumsuz kullanıcı
+    } finally {
+      setLoadingCommunities(false);
+    }
+  }, [account]);
+
+  const handleLeaveCommunity = useCallback(
+    async (communitySlug, communityName) => {
+      if (
+        !window.confirm(
+          `"${communityName}" topluluğundan ayrılmak istediğinize emin misiniz?`
+        )
+      ) {
+        return;
+      }
+
+      setLeavingCommunitySlug(communitySlug);
+      try {
+        await ensureStudentSiweSession(account);
+        await leaveCommunityOnBackend(communitySlug);
+        setCertBanner({
+          type: "success",
+          message: `"${communityName}" topluluğundan başarıyla ayrıldınız.`,
+        });
+        await loadMyCommunities();
+      } catch (err) {
+        setCertBanner({
+          type: "error",
+          message:
+            err?.message ||
+            "Topluluktan ayrılma işlemi gerçekleştirilemedi. Lütfen tekrar deneyin.",
+        });
+      } finally {
+        setLeavingCommunitySlug(null);
+      }
+    },
+    [account, loadMyCommunities]
+  );
+
   const fetchAndSetProfile = useCallback(
     async (targetAccount) => {
       if (!targetAccount) {
@@ -171,6 +232,7 @@ export default function StudentProfile({
             contractAddress: CONTRACT_ADDRESS,
           }),
           loadCertificatesForAccount(targetAccount),
+          loadMyCommunities(),
         ]);
         setProfile(data);
         if (Array.isArray(certList)) {
@@ -187,7 +249,7 @@ export default function StudentProfile({
         setLoading(false);
       }
     },
-    [loadCertificatesForAccount]
+    [loadCertificatesForAccount, loadMyCommunities]
   );
 
   async function handleManualRefresh() {
@@ -599,6 +661,21 @@ export default function StudentProfile({
                   </span>
                   Katılım Zaman Çizelgesi
                 </button>
+
+                <button
+                  type="button"
+                  className={activeProfileTab === "communities" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+                  onClick={() => {
+                    setActiveProfileTab("communities");
+                    loadMyCommunities();
+                  }}
+                  style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                    groups
+                  </span>
+                  Topluluklarım ({myCommunities.joined.length})
+                </button>
               </div>
 
               {/* Bildirim Alanı */}
@@ -963,6 +1040,271 @@ export default function StudentProfile({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* SEKME 4: TOPLULUKLARIM (FAZ 12) */}
+              {activeProfileTab === "communities" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
+                    <div>
+                      <h3 className="font-headline-md" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
+                        Üniversite Topluluklarım
+                      </h3>
+                      <p className="font-body-sm text-on-surface-variant" style={{ margin: "0.25rem 0 0 0" }}>
+                        Üyesi olduğunuz ve başvuru yaptığınız kampüs toplulukları.
+                      </p>
+                    </div>
+
+                    {onExploreCommunities && (
+                      <button
+                        type="button"
+                        className="stitch-btn-secondary"
+                        onClick={onExploreCommunities}
+                        style={{ fontSize: "0.8125rem", padding: "0.4rem 0.8rem" }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                          explore
+                        </span>
+                        Toplulukları Keşfet
+                      </button>
+                    )}
+                  </div>
+
+                  {loadingCommunities ? (
+                    <div className="stitch-card-low" style={{ padding: "2.5rem", textAlign: "center" }}>
+                      <div className="stitch-spinner" style={{ margin: "0 auto 1rem auto" }} />
+                      <div className="font-body-sm text-outline">Topluluk üyelikleri yükleniyor...</div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Bekleyen Başvurular */}
+                      {myCommunities.pending.length > 0 && (
+                        <div>
+                          <div className="font-label-badge text-outline" style={{ marginBottom: "0.75rem" }}>
+                            ONAY BEKLEYEN BAŞVURULAR ({myCommunities.pending.length})
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                            {myCommunities.pending.map((app) => (
+                              <div
+                                key={app.id || app.communityId}
+                                className="stitch-card-low"
+                                style={{
+                                  padding: "1rem 1.25rem",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                  gap: "0.75rem",
+                                  borderLeft: "3px solid #f59e0b",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                                  {app.community?.logoUrl ? (
+                                    <img
+                                      src={app.community.logoUrl}
+                                      alt={app.community.name}
+                                      style={{ width: "36px", height: "36px", borderRadius: "8px", objectFit: "cover" }}
+                                    />
+                                  ) : (
+                                    <div
+                                      style={{
+                                        width: "36px",
+                                        height: "36px",
+                                        borderRadius: "8px",
+                                        backgroundColor: "var(--stitch-surface-container-high)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        color: "var(--stitch-primary)",
+                                      }}
+                                    >
+                                      <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>groups</span>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-headline-sm" style={{ color: "var(--stitch-on-surface)" }}>
+                                      {app.community?.name || "Topluluk"}
+                                    </div>
+                                    <div className="font-body-sm text-outline" style={{ fontSize: "0.75rem" }}>
+                                      Başvuru Tarihi: {formatTurkeyDateOnly(app.appliedAt || app.createdAt)}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                                  <span className="stitch-badge stitch-badge-open" style={{ borderColor: "#f59e0b", color: "#fcd34d" }}>
+                                    Başvuru İnceleniyor
+                                  </span>
+                                  {onNavigateToCommunity && app.community?.slug && (
+                                    <button
+                                      type="button"
+                                      className="stitch-btn-secondary"
+                                      onClick={() => onNavigateToCommunity(app.community.slug)}
+                                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.7rem" }}
+                                    >
+                                      Topluluk Profili
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Aktif Üyelikler */}
+                      <div>
+                        <div className="font-label-badge text-outline" style={{ marginBottom: "0.75rem" }}>
+                          AKTİF ÜYELİKLER ({myCommunities.joined.length})
+                        </div>
+
+                        {myCommunities.joined.length === 0 ? (
+                          <div
+                            className="stitch-card-low"
+                            style={{
+                              padding: "3rem 1.5rem",
+                              textAlign: "center",
+                              borderRadius: "1rem",
+                            }}
+                          >
+                            <span
+                              className="material-symbols-outlined"
+                              style={{ fontSize: "48px", color: "var(--stitch-outline)", marginBottom: "0.5rem" }}
+                            >
+                              group_off
+                            </span>
+                            <div className="font-headline-sm" style={{ color: "var(--stitch-on-surface)" }}>
+                              Henüz Bir Topluluğa Katılmadınız
+                            </div>
+                            <p className="font-body-sm text-on-surface-variant" style={{ maxWidth: "420px", margin: "0.5rem auto 1.25rem auto" }}>
+                              Üniversite topluluklarına katılarak etkinliklerden haberdar olabilir ve kampüs yaşamının parçası olabilirsiniz.
+                            </p>
+                            {onExploreCommunities && (
+                              <button
+                                type="button"
+                                className="stitch-btn-primary"
+                                onClick={onExploreCommunities}
+                                style={{ fontSize: "0.875rem" }}
+                              >
+                                Toplulukları Keşfet ↗
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                            {myCommunities.joined.map((mem) => {
+                              const comm = mem.community || {};
+                              const roleLabel =
+                                mem.role === "OWNER"
+                                  ? "Kurucu"
+                                  : mem.role === "ADMIN"
+                                  ? "Yönetici"
+                                  : "Üye";
+
+                              const roleBadgeClass =
+                                mem.role === "OWNER"
+                                  ? "stitch-badge-testnet"
+                                  : mem.role === "ADMIN"
+                                  ? "stitch-badge-open"
+                                  : "stitch-badge-completed";
+
+                              return (
+                                <div
+                                  key={mem.id || mem.communityId}
+                                  className="stitch-card-low"
+                                  style={{
+                                    padding: "1.25rem",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    gap: "1rem",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                                    {comm.logoUrl ? (
+                                      <img
+                                        src={comm.logoUrl}
+                                        alt={comm.name}
+                                        style={{ width: "44px", height: "44px", borderRadius: "10px", objectFit: "cover" }}
+                                      />
+                                    ) : (
+                                      <div
+                                        style={{
+                                          width: "44px",
+                                          height: "44px",
+                                          borderRadius: "10px",
+                                          background: "linear-gradient(135deg, var(--stitch-primary-container), var(--stitch-secondary-container))",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          color: "#ffffff",
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {(comm.name || "T").slice(0, 2).toUpperCase()}
+                                      </div>
+                                    )}
+
+                                    <div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                        <h4
+                                          className="font-headline-sm"
+                                          style={{
+                                            margin: 0,
+                                            cursor: onNavigateToCommunity ? "pointer" : "default",
+                                            color: "var(--stitch-on-surface)",
+                                          }}
+                                          onClick={() => onNavigateToCommunity && comm.slug && onNavigateToCommunity(comm.slug)}
+                                        >
+                                          {comm.name}
+                                        </h4>
+                                        <span className={`stitch-badge ${roleBadgeClass}`} style={{ fontSize: "0.6875rem" }}>
+                                          {roleLabel}
+                                        </span>
+                                      </div>
+                                      <div className="font-body-sm text-outline" style={{ fontSize: "0.75rem", marginTop: "0.2rem" }}>
+                                        {comm.category || "Genel"} • {comm.universityName || "Monad Üniversitesi"} • Katılım: {formatTurkeyDateOnly(mem.joinedAt || mem.createdAt)}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    {onNavigateToCommunity && comm.slug && (
+                                      <button
+                                        type="button"
+                                        className="stitch-btn-secondary"
+                                        onClick={() => onNavigateToCommunity(comm.slug)}
+                                        style={{ fontSize: "0.8125rem", padding: "0.4rem 0.8rem" }}
+                                      >
+                                        Profili Gör ↗
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      className="stitch-btn-secondary"
+                                      disabled={leavingCommunitySlug === comm.slug}
+                                      onClick={() => handleLeaveCommunity(comm.slug, comm.name)}
+                                      style={{
+                                        fontSize: "0.8125rem",
+                                        padding: "0.4rem 0.75rem",
+                                        borderColor: "rgba(239, 68, 68, 0.4)",
+                                        color: "#fca5a5",
+                                      }}
+                                    >
+                                      {leavingCommunitySlug === comm.slug ? "Ayrılınıyor..." : "Ayrıl"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

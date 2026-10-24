@@ -127,6 +127,39 @@ export default function Navbar({
               border: "none",
               cursor: "pointer",
               transition: "all 0.15s ease",
+              backgroundColor:
+                activeTab === "communities" ||
+                activeTab === "community-profile" ||
+                activeTab === "community-manage"
+                  ? "var(--stitch-surface-container-high)"
+                  : "transparent",
+              color:
+                activeTab === "communities" ||
+                activeTab === "community-profile" ||
+                activeTab === "community-manage"
+                  ? "var(--stitch-primary)"
+                  : "var(--stitch-on-surface-variant)",
+              fontWeight:
+                activeTab === "communities" ||
+                activeTab === "community-profile" ||
+                activeTab === "community-manage"
+                  ? 600
+                  : 500,
+            }}
+            onClick={() => onSelectTab("communities")}
+          >
+            Topluluklar
+          </button>
+
+          <button
+            type="button"
+            className="font-headline-sm"
+            style={{
+              padding: "0.35rem 0.85rem",
+              borderRadius: "0.5rem",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
               backgroundColor: activeTab === "student" ? "var(--stitch-surface-container-high)" : "transparent",
               color: activeTab === "student" ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
               fontWeight: activeTab === "student" ? 600 : 500,

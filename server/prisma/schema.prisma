@@ -11,19 +11,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// İleride öğrenci toplulukları / kulüpleri için genişletilebilir model
+enum CommunityRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  REMOVED
+}
+
+/// Üniversite öğrenci toplulukları / kulüpleri modeli (Faz 12)
 model Community {
-  id                   String          @id @default(cuid())
-  slug                 String          @unique
-  name                 String          @unique
+  id                   String            @id @default(cuid())
+  slug                 String            @unique
+  name                 String            @unique
   description          String?
+  shortDescription     String?
+  universityName       String            @default("Monad Üniversitesi")
+  category             String            @default("Genel")
+  logoUrl              String?
+  coverImageUrl        String?
+  websiteUrl           String?
+  contactEmail         String?
+  createdByWallet      String            @default("")
   leadOrganizerAddress String
-  verified             Boolean         @default(false)
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  status               String            @default("ACTIVE")
+  verified             Boolean           @default(false)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
   events               EventMetadata[]
+  members              CommunityMember[]
 
   @@index([leadOrganizerAddress])
+  @@index([createdByWallet])
+  @@index([status])
+  @@index([category])
+}
+
+/// Topluluk üyelik ve yetkilendirme modeli (Faz 12)
+model CommunityMember {
+  id            String           @id @default(cuid())
+  communityId   String
+  walletAddress String
+  role          CommunityRole    @default(MEMBER)
+  status        MembershipStatus @default(PENDING)
+  joinedAt      DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  community     Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, walletAddress], name: "community_member_unique")
+  @@index([walletAddress])
+  @@index([communityId])
+  @@index([status])
+  @@index([role])
 }
 
 /// Zincir dışı genişletilmiş etkinlik metadata modeli
