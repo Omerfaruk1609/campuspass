@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 import HomePage from "./pages/HomePage";
 import EventPage from "./pages/EventPage";
 import StudentProfile from "./pages/StudentProfile";
@@ -986,6 +987,24 @@ export default function App() {
           />
         )}
       </main>
+
+      <Footer
+        onSelectTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedEventId(null);
+          setOrganizerAnalyticsEventId(null);
+          if (typeof window !== "undefined" && window.history?.pushState) {
+            if (tab === "verify") {
+              const nextUrl = verifyCertificateId
+                ? `/verify/${encodeURIComponent(verifyCertificateId)}`
+                : "/verify";
+              window.history.pushState({}, "", nextUrl);
+            } else if (window.location.pathname.startsWith("/verify")) {
+              window.history.pushState({}, "", "/");
+            }
+          }
+        }}
+      />
     </div>
   );
 }

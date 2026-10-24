@@ -7,6 +7,7 @@ import {
   MONAD_EXPLORER_URL,
   getReadOnlyContract,
   parseBlockchainError,
+  shortenAddress,
 } from "../data/events";
 import {
   formatTurkeyDateOnly,
@@ -30,6 +31,7 @@ import {
   calculateStudentStats,
   fetchStudentProfileData,
 } from "../utils/studentProfile";
+import { generateQrMatrix } from "../utils/qrMatrix";
 
 const EMPTY_PROFILE = {
   walletAddress: null,
@@ -40,6 +42,48 @@ const EMPTY_PROFILE = {
   stats: calculateStudentStats([]),
   timeline: [],
 };
+
+function QrSvgSmall({ value, size = 130 }) {
+  if (!value) return null;
+  let matrix;
+  try {
+    matrix = generateQrMatrix(value);
+  } catch {
+    return null;
+  }
+
+  const modules = matrix.length;
+  const quietZone = 2;
+  const totalModules = modules + quietZone * 2;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${totalModules} ${totalModules}`}
+      shapeRendering="crispEdges"
+      role="img"
+      aria-label="Kampüs Geçiş QR Kodu"
+      style={{ borderRadius: "6px" }}
+    >
+      <rect width={totalModules} height={totalModules} fill="#ffffff" rx="2" />
+      {matrix.map((row, rIdx) =>
+        Array.from(row).map((cell, cIdx) =>
+          cell === 1 ? (
+            <rect
+              key={`${rIdx}-${cIdx}`}
+              x={cIdx + quietZone}
+              y={rIdx + quietZone}
+              width={1}
+              height={1}
+              fill="#03122e"
+            />
+          ) : null
+        )
+      )}
+    </svg>
+  );
+}
 
 export default function StudentProfile({
   account,
@@ -54,6 +98,7 @@ export default function StudentProfile({
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [loading, setLoading] = useState(() => Boolean(account));
   const [rpcError, setRpcError] = useState(null);
+  const [activeProfileTab, setActiveProfileTab] = useState("events"); // events | certs | timeline
   const [sectionFilter, setSectionFilter] = useState("all"); // all | upcoming | attended | past
   const [timelineDirection, setTimelineDirection] = useState("DESC");
 
@@ -65,6 +110,7 @@ export default function StudentProfile({
   const [optionalDisplayName, setOptionalDisplayName] = useState("");
   const [selectedCertificateModal, setSelectedCertificateModal] = useState(null);
   const [copiedCertId, setCopiedCertId] = useState(null);
+  const [copiedWallet, setCopiedWallet] = useState(false);
 
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
 
@@ -91,7 +137,6 @@ export default function StudentProfile({
       setCertificates(safeList);
       return safeList;
     } catch {
-      // Backend çevrimdışıysa sertifika listesini boş tut, profil akışını bozma
       setCertificates([]);
       return [];
     } finally {
@@ -114,7 +159,7 @@ export default function StudentProfile({
             hydrateMetadataStoreFromServerMap(backendData.metadataMap);
           }
         } catch {
-          // Backend çevrimdışıysa yerel/zincir üstü verilerle kesintisiz devam et
+          // Backend çevrimdışı fallback
         }
 
         const contract = getReadOnlyContract();
@@ -224,31 +269,56 @@ export default function StudentProfile({
     }
   }
 
-  // Ekran 1: Cüzdan bağlı değil
+  function handleCopyAddress() {
+    if (!account) return;
+    try {
+      navigator.clipboard?.writeText(account);
+      setCopiedWallet(true);
+      setTimeout(() => setCopiedWallet(false), 2000);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Cüzdan bağlı değil ekranı
   if (!account) {
     return (
-      <div className="page-container">
-        <section className="card-panel profile-empty-hero">
-          <span className="eyebrow">Öğrenci Profili &amp; Katılım Sertifikaları</span>
-          <h1>Kayıtlı Etkinliklerinizi ve Doğrulanmış Sertifikalarınızı Görüntüleyin</h1>
-          <p
-            className="panel-subtitle"
-            style={{ maxWidth: "640px", margin: "0.5rem auto 1.25rem" }}
+      <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
+        <div className="stitch-container">
+          <section
+            className="stitch-card"
+            style={{
+              padding: "4rem 2rem",
+              textAlign: "center",
+              borderRadius: "1.5rem",
+              background: "linear-gradient(135deg, rgba(17, 31, 59, 0.95) 0%, rgba(3, 18, 46, 0.95) 100%)",
+              maxWidth: "680px",
+              margin: "0 auto",
+            }}
           >
-            CampusPass kişisel verilerinizi (isim, öğrenci numarası vb.) zorunlu tutmaz veya
-            blokzincire kaydetmez. Profiliniz ve katılım sertifikalarınız yalnızca bağlı
-            cüzdan adresinizin Monad Testnet üzerindeki doğrulanabilir kayıtlarından
-            oluşturulur.
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConnectWallet}
-            disabled={isConnecting}
-          >
-            {isConnecting ? "Cüzdan Bağlanıyor..." : "Profili Görmek İçin Cüzdan Bağla"}
-          </button>
-        </section>
+            <span className="stitch-badge stitch-badge-testnet" style={{ marginBottom: "1rem" }}>
+              Öğrenci Profili &amp; Katılım Sertifikaları
+            </span>
+            <h1 className="font-headline-lg" style={{ margin: "0.5rem 0 1rem 0" }}>
+              Kayıtlı Etkinliklerinizi ve Sertifikalarınızı Görüntüleyin
+            </h1>
+            <p className="font-body-md text-on-surface-variant" style={{ margin: "0 0 2rem 0" }}>
+              CampusPass kişisel verilerinizi (isim, öğrenci numarası) zorunlu tutmaz veya blokzincire kaydetmez.
+              Profiliniz ve katılım sertifikalarınız yalnızca bağlı cüzdan adresinizin Monad Testnet üzerindeki
+              doğrulanabilir kayıtlarından oluşturulur.
+            </p>
+            <button
+              type="button"
+              className="stitch-btn-primary"
+              onClick={onConnectWallet}
+              disabled={isConnecting}
+              style={{ padding: "0.875rem 2rem", fontSize: "1rem" }}
+            >
+              <span className="material-symbols-outlined">account_balance_wallet</span>
+              {isConnecting ? "Cüzdan Bağlanıyor..." : "Profili Görmek İçin Cüzdan Bağla"}
+            </button>
+          </section>
+        </div>
       </div>
     );
   }
@@ -276,529 +346,738 @@ export default function StudentProfile({
   const sortedTimeline =
     timelineDirection === "ASC" ? [...timeline].reverse() : timeline;
 
+  // Katılınan benzersiz kulüpler
+  const studentCommunities = Array.from(
+    new Set(registeredEvents.map((e) => e.community).filter(Boolean))
+  );
+
   return (
-    <div className="page-container">
-      {/* 1. Öğrenci Cüzdan ve Bağlantı Durumu Başlığı */}
-      <section className="card-panel student-profile-header">
-        <div className="profile-identity-row">
-          <div className="profile-avatar-badge" aria-hidden="true">
-            {account.slice(2, 4).toUpperCase()}
+    <div className="stitch-shell page-container" style={{ paddingBottom: "5rem" }}>
+      {/* Ambient Glows */}
+      <div
+        className="ambient-glow-primary"
+        style={{ top: "5%", left: "10%", width: "450px", height: "450px" }}
+      />
+      <div
+        className="ambient-glow-secondary"
+        style={{ top: "35%", right: "5%", width: "450px", height: "450px" }}
+      />
+
+      <div className="stitch-container" style={{ position: "relative", zIndex: 1, paddingTop: "2rem" }}>
+        {/* 1. ÖĞRENCİ KİMLİK & BAĞLANTI BANNER'I */}
+        <section
+          className="stitch-card"
+          style={{
+            padding: "2rem",
+            borderRadius: "1.25rem",
+            marginBottom: "2rem",
+            background: "linear-gradient(135deg, rgba(22, 38, 76, 0.9) 0%, rgba(12, 27, 54, 0.95) 100%)",
+            border: "1px solid rgba(185, 195, 255, 0.25)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "1.5rem",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  width: "64px",
+                  height: "64px",
+                  borderRadius: "16px",
+                  background: "linear-gradient(135deg, var(--stitch-primary-container), var(--stitch-secondary-container))",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.5rem",
+                  fontWeight: 800,
+                  color: "#ffffff",
+                  boxShadow: "0 8px 20px rgba(111, 136, 255, 0.35)",
+                }}
+              >
+                {account.slice(2, 4).toUpperCase()}
+              </div>
+
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.35rem" }}>
+                  <span className="stitch-badge stitch-badge-open">
+                    Cüzdan Doğrulandı ✓
+                  </span>
+                  {isCorrectNetwork ? (
+                    <span className="stitch-badge stitch-badge-testnet">
+                      Monad Testnet ({MONAD_CHAIN_ID})
+                    </span>
+                  ) : (
+                    <span className="stitch-badge stitch-badge-full">
+                      Farklı Ağ ({chainId || "?"})
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <h1 className="font-headline-md font-label-mono" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
+                    {account}
+                  </h1>
+                  <button
+                    type="button"
+                    className="stitch-btn-secondary"
+                    onClick={handleCopyAddress}
+                    style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem" }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>
+                      content_copy
+                    </span>
+                    {copiedWallet ? "Kopyalandı ✓" : "Adresi Kopyala"}
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+                  <a
+                    href={`${MONAD_EXPLORER_URL}/address/${account}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "var(--stitch-primary)", textDecoration: "none" }}
+                  >
+                    Cüzdanı Monad Explorer&apos;da Görüntüle ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              {!isCorrectNetwork && (
+                <button
+                  type="button"
+                  className="stitch-btn-primary"
+                  onClick={onSwitchNetwork}
+                  style={{ backgroundColor: "var(--stitch-error-container)", fontSize: "0.8125rem" }}
+                >
+                  Monad Testnet&apos;e Geç (10143)
+                </button>
+              )}
+              <button
+                type="button"
+                className="stitch-btn-secondary"
+                onClick={handleManualRefresh}
+                disabled={loading}
+                style={{ fontSize: "0.8125rem" }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                  refresh
+                </span>
+                {loading ? "Yenileniyor..." : "Verileri Yenile"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {rpcError && (
+          <div
+            className="stitch-card"
+            style={{
+              padding: "1rem 1.25rem",
+              backgroundColor: "rgba(147, 0, 10, 0.25)",
+              borderColor: "var(--stitch-error)",
+              color: "var(--stitch-error)",
+              borderRadius: "0.75rem",
+              marginBottom: "2rem",
+            }}
+          >
+            <strong>Blokzincir Bağlantı Hatası:</strong> {rpcError}
+          </div>
+        )}
+
+        {/* 2. 4 HIZLI İSTATİSTİK METRİK KARTI */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: "1.25rem",
+            marginBottom: "2.5rem",
+          }}
+        >
+          <div className="stitch-card-low" style={{ padding: "1.25rem" }}>
+            <div className="font-label-mono text-outline">TOPLAM KAYIT</div>
+            <div className="font-display-hero" style={{ fontSize: "2rem", color: "var(--stitch-on-surface)", marginTop: "0.25rem" }}>
+              {stats.totalRegistered}
+            </div>
+            <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+              Kayıtlı olunan kampüs etkinliği
+            </div>
           </div>
 
-          <div className="profile-identity-info">
-            <div className="badge-group">
-              <span className="status-badge active">Cüzdan Bağlı ✓</span>
-              {isCorrectNetwork ? (
-                <span className="status-badge registered">
-                  Monad Testnet ({MONAD_CHAIN_ID})
-                </span>
-              ) : (
-                <span className="status-badge cancelled">
-                  Farklı Ağ (Chain ID: {chainId || "?"})
-                </span>
+          <div className="stitch-card-low" style={{ padding: "1.25rem" }}>
+            <div className="font-label-mono text-outline">DOĞRULANMIŞ KATILIM</div>
+            <div className="font-display-hero" style={{ fontSize: "2rem", color: "#6ee7b7", marginTop: "0.25rem" }}>
+              {stats.verifiedAttended}
+            </div>
+            <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+              Blokzincirde onaylanan etkinlik
+            </div>
+          </div>
+
+          <div className="stitch-card-low" style={{ padding: "1.25rem" }}>
+            <div className="font-label-mono text-outline">DİJİTAL SERTİFİKA</div>
+            <div className="font-display-hero" style={{ fontSize: "2rem", color: "var(--stitch-primary)", marginTop: "0.25rem" }}>
+              {certificates.length}
+            </div>
+            <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+              Blokzincir doğrulamalı sertifika
+            </div>
+          </div>
+
+          <div className="stitch-card-low" style={{ padding: "1.25rem" }}>
+            <div className="font-label-mono text-outline">KATILIM DÖNÜŞÜMÜ</div>
+            <div className="font-display-hero" style={{ fontSize: "2rem", color: "var(--stitch-tertiary)", marginTop: "0.25rem" }}>
+              %{stats.attendanceRate}
+            </div>
+            <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+              Kayıt / katılım başarı oranı
+            </div>
+          </div>
+        </section>
+
+        {/* 3. ANA GÖVDE: SOLDA SEKMELER / SAĞDA DİNAMİK GEÇİŞ KARTI */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: "2rem",
+          }}
+          className="student-profile-layout"
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "2rem" }}>
+            {/* SOL ANA KOLON — SEKMELİ İÇERİK */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+              {/* Sekme Butonları */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.75rem",
+                  borderBottom: "1px solid rgba(142, 144, 161, 0.2)",
+                  paddingBottom: "0.5rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className={activeProfileTab === "events" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+                  onClick={() => setActiveProfileTab("events")}
+                  style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                    event
+                  </span>
+                  Etkinliklerim ({registeredEvents.length})
+                </button>
+
+                <button
+                  type="button"
+                  className={activeProfileTab === "certs" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+                  onClick={() => setActiveProfileTab("certs")}
+                  style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                    workspace_premium
+                  </span>
+                  Sertifikalarım ({certificates.length})
+                </button>
+
+                <button
+                  type="button"
+                  className={activeProfileTab === "timeline" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+                  onClick={() => setActiveProfileTab("timeline")}
+                  style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                    timeline
+                  </span>
+                  Katılım Zaman Çizelgesi
+                </button>
+              </div>
+
+              {/* Bildirim Alanı */}
+              {certBanner && (
+                <div
+                  className="stitch-card"
+                  style={{
+                    padding: "1rem",
+                    backgroundColor: certBanner.type === "error" ? "rgba(147, 0, 10, 0.25)" : "rgba(16, 185, 129, 0.2)",
+                    borderColor: certBanner.type === "error" ? "var(--stitch-error)" : "#6ee7b7",
+                    color: certBanner.type === "error" ? "var(--stitch-error)" : "#6ee7b7",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  {certBanner.message}
+                </div>
+              )}
+
+              {/* SEKME 1: ETKİNLİKLERİM */}
+              {activeProfileTab === "events" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  {/* Alt Filtre Hapları */}
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className={`stitch-btn-secondary ${sectionFilter === "all" ? "bg-surface-container-high" : ""}`}
+                      onClick={() => setSectionFilter("all")}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                    >
+                      Tüm Kayıtlar ({registeredEvents.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`stitch-btn-secondary ${sectionFilter === "upcoming" ? "bg-surface-container-high" : ""}`}
+                      onClick={() => setSectionFilter("upcoming")}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                    >
+                      Yaklaşanlar ({upcomingEvents.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`stitch-btn-secondary ${sectionFilter === "attended" ? "bg-surface-container-high" : ""}`}
+                      onClick={() => setSectionFilter("attended")}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                    >
+                      Katıldıklarım ({attendedEvents.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`stitch-btn-secondary ${sectionFilter === "past" ? "bg-surface-container-high" : ""}`}
+                      onClick={() => setSectionFilter("past")}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                    >
+                      Geçmiş ({pastEvents.length})
+                    </button>
+                  </div>
+
+                  {displayedEvents.length === 0 ? (
+                    <div className="stitch-card" style={{ padding: "3rem", textAlign: "center" }}>
+                      <p className="font-body-md text-on-surface-variant">Bu filtrede görüntülenecek etkinlik bulunmuyor.</p>
+                      {registeredEvents.length === 0 && (
+                        <button
+                          type="button"
+                          className="stitch-btn-primary"
+                          onClick={onExploreEvents}
+                          style={{ marginTop: "1rem" }}
+                        >
+                          Etkinlikleri Keşfet ve Kaydol
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                      {displayedEvents.map((ev) => {
+                        const attState = ev.attendanceState;
+                        const isVerifiedAttended = Boolean(
+                          ev.isAttended ||
+                          attState?.code === ATTENDANCE_STATE.ATTENDED_VERIFIED
+                        );
+                        const existingCert = certificatesByEventId.get(Number(ev.id));
+                        const activeCert =
+                          existingCert &&
+                          (existingCert.status === "ACTIVE" || !existingCert.status)
+                            ? existingCert
+                            : null;
+
+                        return (
+                          <article
+                            key={ev.id}
+                            className="stitch-card-low event-card"
+                            style={{
+                              padding: "1.25rem 1.5rem",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.75rem",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span className="font-label-mono text-outline">#{ev.id}</span>
+                                <span className="font-label-badge text-primary">{ev.community}</span>
+                              </div>
+                              <div style={{ display: "flex", gap: "0.35rem" }}>
+                                <span className="stitch-badge stitch-badge-open">Kayıtlı ✓</span>
+                                <span className={`stitch-badge ${isVerifiedAttended ? "stitch-badge-completed" : "stitch-badge-testnet"}`}>
+                                  {attState?.label || "Bekleniyor"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <h3 className="font-headline-sm" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
+                              {ev.title}
+                            </h3>
+
+                            <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", fontSize: "0.8125rem", color: "var(--stitch-on-surface-variant)" }}>
+                              <div>📅 {formatTurkeyDateOnly(ev.date)} • {ev.startTime} - {ev.endTime}</div>
+                              <div>📍 {ev.location?.campus} / {ev.location?.building} ({ev.location?.room})</div>
+                            </div>
+
+                            {/* FAZ 10 DÜZELTMESİ: isVerifiedAttended + activeCert vs !activeCert */}
+                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
+                              <button
+                                type="button"
+                                className="stitch-btn-primary"
+                                onClick={() => onSelectEvent(ev.id)}
+                                style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem" }}
+                              >
+                                {isVerifiedAttended ? "Etkinlik Detayını Gör" : "Detay & QR Katılım Kodu"}
+                              </button>
+
+                              {isVerifiedAttended && activeCert && (
+                                <button
+                                  type="button"
+                                  className="stitch-btn-secondary"
+                                  onClick={() => setSelectedCertificateModal(activeCert)}
+                                  style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem" }}
+                                >
+                                  🎓 Sertifikayı Görüntüle
+                                </button>
+                              )}
+
+                              {isVerifiedAttended && !activeCert && (
+                                <button
+                                  type="button"
+                                  className="stitch-btn-secondary"
+                                  disabled={issuingEventId === ev.id}
+                                  onClick={() => handleIssueCertificate(ev.id)}
+                                  style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem" }}
+                                >
+                                  {issuingEventId === ev.id ? "Sertifika Üretiliyor..." : "🎓 Sertifika Oluştur"}
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SEKME 2: SERTİFİKALARIM */}
+              {activeProfileTab === "certs" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  <div className="stitch-card-low" style={{ padding: "1.25rem" }}>
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <h3 className="font-headline-sm" style={{ margin: 0 }}>
+                        Blokzincir Doğrulamalı Katılım Sertifikalarım
+                      </h3>
+                      <p className="font-body-sm text-on-surface-variant" style={{ margin: "0.25rem 0 0" }}>
+                        Yalnızca blokzincir üzerinde <code>AttendanceMarked</code> olayıyla katılımı doğrulanmış
+                        etkinlikler için sertifika oluşturulabilir.
+                      </p>
+                    </div>
+
+                    {attendedEvents.length > 0 && (
+                      <div style={{ marginTop: "1rem" }}>
+                        <label className="font-label-badge text-outline" htmlFor="cert-name-input">
+                          İsteğe Bağlı Sertifika Gösterim Adı (Zorunlu Değil):
+                        </label>
+                        <input
+                          id="cert-name-input"
+                          type="text"
+                          maxLength={80}
+                          className="stitch-input"
+                          value={optionalDisplayName}
+                          onChange={(e) => setOptionalDisplayName(e.target.value)}
+                          placeholder="Boş bırakırsanız yalnızca cüzdan adresiniz gösterilir"
+                          style={{ marginTop: "0.35rem" }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {loadingCertificates ? (
+                    <div className="stitch-card" style={{ padding: "3rem", textAlign: "center" }}>
+                      <p className="font-body-md text-on-surface-variant">Sertifika kayıtlarınız kontrol ediliyor...</p>
+                    </div>
+                  ) : certificates.length === 0 ? (
+                    <div className="stitch-card" style={{ padding: "2.5rem", textAlign: "center" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: "48px", color: "var(--stitch-outline)" }}>
+                        workspace_premium
+                      </span>
+                      <h4 className="font-headline-sm" style={{ margin: "1rem 0 0.5rem" }}>
+                        Henüz Oluşturulmuş Bir Dijital Sertifikanız Yok
+                      </h4>
+                      <p className="font-body-sm text-on-surface-variant" style={{ maxWidth: "500px", margin: "0 auto" }}>
+                        {attendedEvents.length > 0
+                          ? "Doğrulanmış katılımlarınız bulunuyor! 'Etkinliklerim' sekmesinden '🎓 Sertifika Oluştur' butonuna tıklayarak hemen üretebilirsiniz."
+                          : "Sertifika alabilmek için kayıt olduğunuz bir etkinlikte QR kodunuzun organizatör tarafından blokzincir üzerinde doğrulanması (AttendanceMarked) gerekir."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
+                      {certificates.map((cert) => (
+                        <div
+                          key={cert.certificateId}
+                          className="stitch-card"
+                          style={{
+                            padding: "1.5rem",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "0.75rem",
+                            borderRadius: "1rem",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span className="font-label-mono text-outline" style={{ fontSize: "0.75rem" }}>
+                              {cert.certificateId}
+                            </span>
+                            <span className="stitch-badge stitch-badge-completed">
+                              Doğrulandı ✓
+                            </span>
+                          </div>
+
+                          <div className="font-label-badge text-primary">{cert.community}</div>
+                          <h4 className="font-headline-sm" style={{ margin: 0 }}>
+                            {cert.eventTitle}
+                          </h4>
+
+                          <div className="font-body-sm text-outline" style={{ fontSize: "0.75rem" }}>
+                            <div>Veriliş: {formatTurkeyDateTime(cert.issuedAt)}</div>
+                            <div>Blok Kanıtı: Blok #{cert.attendanceBlockNumber}</div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "auto" }}>
+                            <button
+                              type="button"
+                              className="stitch-btn-primary"
+                              onClick={() => setSelectedCertificateModal(cert)}
+                              style={{ flex: 1, fontSize: "0.75rem", padding: "0.4rem" }}
+                            >
+                              Görüntüle
+                            </button>
+                            <button
+                              type="button"
+                              className="stitch-btn-secondary"
+                              onClick={() => downloadCertificatePdf(cert)}
+                              style={{ flex: 1, fontSize: "0.75rem", padding: "0.4rem" }}
+                            >
+                              PDF İndir
+                            </button>
+                            <button
+                              type="button"
+                              className="stitch-btn-secondary"
+                              onClick={() => handleCopyVerifyLink(cert.certificateId)}
+                              style={{ flex: 1, fontSize: "0.75rem", padding: "0.4rem" }}
+                            >
+                              {copiedCertId === cert.certificateId ? "Kopyalandı ✓" : "Bağlantı"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SEKME 3: KATILIM ZAMAN ÇİZELGESİ */}
+              {activeProfileTab === "timeline" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="font-body-sm text-outline">Kronolojik Katılım Akışı</span>
+                    <button
+                      type="button"
+                      className="stitch-btn-secondary"
+                      onClick={() => setTimelineDirection((prev) => (prev === "DESC" ? "ASC" : "DESC"))}
+                      style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}
+                    >
+                      {timelineDirection === "DESC" ? "Yeniden Eskiye ↓" : "Eskiden Yeniye ↑"}
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {sortedTimeline.map((item) => (
+                      <div
+                        key={item.eventId}
+                        className="stitch-card-low"
+                        style={{
+                          padding: "1rem 1.25rem",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <span
+                            style={{
+                              width: "10px",
+                              height: "10px",
+                              borderRadius: "50%",
+                              backgroundColor: item.isAttended ? "#6ee7b7" : "var(--stitch-outline)",
+                            }}
+                          />
+                          <div>
+                            <div className="font-label-badge text-primary">{item.community}</div>
+                            <h4
+                              className="font-headline-sm"
+                              style={{ margin: "0.15rem 0", cursor: "pointer" }}
+                              onClick={() => onSelectEvent(item.eventId)}
+                            >
+                              #{item.eventId}: {item.title}
+                            </h4>
+                            <div className="font-body-sm text-outline" style={{ fontSize: "0.75rem" }}>
+                              {formatTurkeyDateTime(item.startAt)} (TSİ)
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <span className={`stitch-badge ${item.isAttended ? "stitch-badge-completed" : "stitch-badge-open"}`}>
+                            {item.attendanceState.label}
+                          </span>
+
+                          {item.isAttended && (
+                            <div>
+                              {certificatesByEventId.get(Number(item.eventId)) ? (
+                                <button
+                                  type="button"
+                                  className="stitch-btn-secondary"
+                                  onClick={() => setSelectedCertificateModal(certificatesByEventId.get(Number(item.eventId)))}
+                                  style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}
+                                >
+                                  Sertifika
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="stitch-btn-primary"
+                                  disabled={issuingEventId === item.eventId}
+                                  onClick={() => handleIssueCertificate(item.eventId)}
+                                  style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}
+                                >
+                                  {issuingEventId === item.eventId ? "..." : "Sertifika Üret"}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
-            <h1 className="profile-wallet-title monospace">{account}</h1>
-
-            <div className="profile-links-row">
-              <a
-                href={`${MONAD_EXPLORER_URL}/address/${account}`}
-                target="_blank"
-                rel="noreferrer"
-                className="detail-value link"
+            {/* SAĞ YAN KOLON: DİNAMİK KAMPÜS GEÇİŞ KARTI (Pass Card) */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <div
+                className="stitch-card"
+                style={{
+                  padding: "1.75rem",
+                  borderRadius: "1.25rem",
+                  background: "linear-gradient(145deg, #16264c 0%, #0c1b36 100%)",
+                  border: "1px solid rgba(185, 195, 255, 0.3)",
+                  boxShadow: "0 16px 36px rgba(0, 13, 40, 0.7)",
+                }}
               >
-                Cüzdanı Monad Explorer&apos;da Görüntüle ↗
-              </a>
-            </div>
-          </div>
-
-          <div className="profile-header-actions">
-            {!isCorrectNetwork && (
-              <button
-                type="button"
-                className="btn btn-warning btn-sm"
-                onClick={onSwitchNetwork}
-              >
-                Monad Testnet&apos;e Geç (10143)
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={handleManualRefresh}
-              disabled={loading}
-            >
-              {loading ? "Yenileniyor..." : "↻ Verileri Yenile"}
-            </button>
-          </div>
-        </div>
-
-        <p className="privacy-footnote">
-          Gizlilik Notu: Bu profilde birincil kimlik olarak yalnızca cüzdan adresiniz ve
-          `CampusPass.sol` üzerindeki herkese açık blokzincir kayıtları kullanılır.
-        </p>
-      </section>
-
-      {/* 4. Öğrenci İstatistik Kartları */}
-      <section className="card-panel">
-        <div className="panel-header">
-          <h2>Katılım ve Kayıt İstatistiklerim</h2>
-          <p className="panel-subtitle">{stats.scopeDescription}</p>
-        </div>
-
-        <div className="student-stats-grid">
-          <div className="kpi-card">
-            <span className="kpi-value">{stats.totalRegistered}</span>
-            <span className="kpi-label">Toplam Kayıt</span>
-          </div>
-
-          <div className="kpi-card highlight-success">
-            <span className="kpi-value">{stats.verifiedAttended}</span>
-            <span className="kpi-label">Doğrulanmış Katılım</span>
-          </div>
-
-          <div className="kpi-card">
-            <span className="kpi-value">{certificates.length}</span>
-            <span className="kpi-label">Dijital Sertifika</span>
-          </div>
-
-          <div className="kpi-card">
-            <span className="kpi-value">{stats.upcomingCount}</span>
-            <span className="kpi-label">Yaklaşan Etkinlik</span>
-          </div>
-
-          <div className="kpi-card highlight-primary">
-            <span className="kpi-value">%{stats.attendanceRate}</span>
-            <span className="kpi-label">Katılım Doğrulama Oranı</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Faz 10 — Sertifikalarım Bölümü */}
-      <section className="card-panel certificates-panel">
-        <div className="panel-header-flex">
-          <div>
-            <h2>🎓 Sertifikalarım (Blokzincir Doğrulamalı)</h2>
-            <p className="panel-subtitle">
-              Yalnızca blokzincir üzerinde <code>AttendanceMarked</code> olayıyla katılımı
-              doğrulanmış etkinlikler için sertifika oluşturulabilir. Cüzdan adresiniz
-              birincil kimliktir; dilerseniz sertifika PDF önizlemesi için isteğe bağlı
-              gösterim adı ekleyebilirsiniz.
-            </p>
-          </div>
-        </div>
-
-        {attendedEvents.length > 0 && (
-          <div className="cert-displayname-bar">
-            <label htmlFor="cert-display-name-input" className="cert-displayname-label">
-              İsteğe Bağlı Sertifika Gösterim Adı (Zorunlu Değil):
-            </label>
-            <input
-              id="cert-display-name-input"
-              type="text"
-              maxLength={80}
-              className="cert-displayname-input"
-              value={optionalDisplayName}
-              onChange={(e) => setOptionalDisplayName(e.target.value)}
-              placeholder="Boş bırakırsanız yalnızca cüzdan adresiniz gösterilir"
-            />
-          </div>
-        )}
-
-        {certBanner && (
-          <div
-            className={`inline-alert ${certBanner.type === "error" ? "error" : "info-subtle"}`}
-            style={{ marginBottom: "1rem" }}
-          >
-            {certBanner.message}
-          </div>
-        )}
-
-        {loadingCertificates ? (
-          <div className="empty-state">
-            <p>Sertifika kayıtlarınız kontrol ediliyor...</p>
-          </div>
-        ) : certificates.length === 0 ? (
-          <div className="empty-state" style={{ padding: "1.5rem" }}>
-            <h4>Henüz Oluşturulmuş Bir Dijital Sertifikanız Yok</h4>
-            <p style={{ marginTop: "0.4rem" }}>
-              {attendedEvents.length > 0
-                ? "Doğrulanmış katılımlarınız bulunuyor! Aşağıdaki etkinlik kartlarından '🎓 Sertifika Oluştur' düğmesine tıklayarak sertifikanızı hemen üretebilirsiniz."
-                : "Sertifika alabilmek için kayıt olduğunuz bir etkinlikte QR kodunuzun organizatör tarafından blokzincir üzerinde doğrulanması (AttendanceMarked) gerekir."}
-            </p>
-          </div>
-        ) : (
-          <div className="cert-cards-grid">
-            {certificates.map((cert) => (
-              <article key={cert.certificateId} className="cert-card">
-                <div className="cert-card-top">
-                  <span className="cert-card-id monospace">{cert.certificateId}</span>
-                  <span
-                    className={`status-badge ${
-                      cert.status === "ACTIVE" ? "active" : "cancelled"
-                    }`}
-                  >
-                    {cert.status === "ACTIVE"
-                      ? "Doğrulanmış Sertifika ✓"
-                      : "Geçersizleşti (Reorg)"}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <div
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "6px",
+                        background: "linear-gradient(135deg, var(--stitch-primary-container), var(--stitch-tertiary))",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 800,
+                        fontSize: "0.75rem",
+                        color: "#ffffff",
+                      }}
+                    >
+                      CP
+                    </div>
+                    <span className="font-label-badge text-outline">DİNAMİK KAMPÜS KARTI</span>
+                  </div>
+                  <span className="stitch-badge stitch-badge-testnet" style={{ fontSize: "0.625rem" }}>
+                    MONAD
                   </span>
                 </div>
 
-                <div className="event-community-line">{cert.community}</div>
-                <h3 className="cert-card-title">{cert.eventTitle}</h3>
-
-                <div className="cert-card-meta">
-                  <div>
-                    <strong>Veriliş Tarihi:</strong>{" "}
-                    {formatTurkeyDateTime(cert.issuedAt)} (TSİ)
-                  </div>
-                  <div>
-                    <strong>Blok Kanıtı:</strong> Blok #{cert.attendanceBlockNumber} • Log #
-                    {cert.attendanceLogIndex}
-                  </div>
-                  <div className="monospace" style={{ fontSize: "0.78rem", opacity: 0.85 }}>
-                    Tx: {cert.attendanceTxHash.slice(0, 18)}...
-                  </div>
+                {/* QR Alanı */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    padding: "1rem",
+                    backgroundColor: "#ffffff",
+                    borderRadius: "10px",
+                    marginBottom: "1.25rem",
+                  }}
+                >
+                  <QrSvgSmall value={`CP:STUDENT:${account}:10143`} size={140} />
                 </div>
 
-                <div className="cert-card-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => setSelectedCertificateModal(cert)}
-                  >
-                    🎓 Sertifikayı Görüntüle
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => downloadCertificatePdf(cert)}
-                  >
-                    📥 PDF İndir
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => handleCopyVerifyLink(cert.certificateId)}
-                  >
-                    {copiedCertId === cert.certificateId
-                      ? "✓ Bağlantı Kopyalandı"
-                      : "🔗 Doğrulama Bağlantısı"}
-                  </button>
-                  {onOpenVerifyPage && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => onOpenVerifyPage(cert.certificateId)}
-                    >
-                      🔍 Doğrula
-                    </button>
-                  )}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.8125rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span className="text-outline">Cüzdan ID:</span>
+                    <span className="font-label-mono text-primary">{shortenAddress(account)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span className="text-outline">Doğrulama Protokolü:</span>
+                    <span className="font-label-mono text-tertiary">EIP-191 / SIWE</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span className="text-outline">Onaylı Sertifikalar:</span>
+                    <span className="font-label-mono" style={{ color: "#6ee7b7" }}>{certificates.length} Adet</span>
+                  </div>
                 </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Ekran Durumları: Yükleniyor / RPC Hatası / Boş Durum / Etkinlik Listesi */}
-      {loading ? (
-        <div className="empty-state">
-          <p>Monad Testnet üzerinden öğrenci kayıt ve katılım geçmişiniz okunuyor...</p>
-        </div>
-      ) : rpcError ? (
-        <div className="card-panel">
-          <div className="inline-alert error">
-            <strong>Blokzincir Bağlantı Hatası:</strong> {rpcError}
-          </div>
-          <div style={{ marginTop: "1rem" }}>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={handleManualRefresh}
-            >
-              ↻ Tekrar Dene
-            </button>
-          </div>
-        </div>
-      ) : registeredEvents.length === 0 ? (
-        <div className="empty-state">
-          <h3>Henüz Kayıt Olduğunuz Bir Etkinlik Bulunmuyor</h3>
-          <p style={{ margin: "0.5rem 0 1.25rem" }}>
-            Bu cüzdan adresiyle (`registered(eventId, wallet)`) eşleşen bir etkinlik
-            kaydı bulunamadı.
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onExploreEvents}
-          >
-            Etkinlikleri Keşfet ve Kaydol
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* 2 & 3. Kayıtlı Etkinliklerim ve Katılım Geçmişim */}
-          <section className="events-section">
-            <div className="section-toolbar">
-              <div className="filter-pills">
-                <button
-                  type="button"
-                  className={`pill-btn ${sectionFilter === "all" ? "active" : ""}`}
-                  onClick={() => setSectionFilter("all")}
-                >
-                  Tüm Kayıtlarım ({registeredEvents.length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${
-                    sectionFilter === "upcoming" ? "active" : ""
-                  }`}
-                  onClick={() => setSectionFilter("upcoming")}
-                >
-                  Yaklaşan Etkinlikler ({upcomingEvents.length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${
-                    sectionFilter === "attended" ? "active" : ""
-                  }`}
-                  onClick={() => setSectionFilter("attended")}
-                >
-                  Doğrulanmış Katılımlarım ({attendedEvents.length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${sectionFilter === "past" ? "active" : ""}`}
-                  onClick={() => setSectionFilter("past")}
-                >
-                  Geçmiş Etkinlikler ({pastEvents.length})
-                </button>
-              </div>
-            </div>
-
-            {stats.verifiedAttended === 0 && (
-              <div className="inline-alert info-subtle" style={{ marginBottom: "1rem" }}>
-                Kayıtlı olduğunuz etkinlikler bulunuyor ancak henüz blokzincir üzerinde
-                doğrulanmış (`attended`) bir katılımınız yok. Etkinlik günü detay
-                sayfasından imzalı QR kodunuzu organizatöre okutabilirsiniz.
-              </div>
-            )}
-
-            {displayedEvents.length === 0 ? (
-              <div className="empty-state">
-                <p>Bu filtrede görüntülenecek etkinlik bulunmuyor.</p>
-              </div>
-            ) : (
-              <div className="events-grid">
-                {displayedEvents.map((ev) => {
-                  const attState = ev.attendanceState;
-                  const isVerifiedAttended = Boolean(
-                    ev.isAttended ||
-                    attState?.code === ATTENDANCE_STATE.ATTENDED_VERIFIED
-                  );
-                  const existingCert = certificatesByEventId.get(Number(ev.id));
-                  const activeCert =
-                    existingCert &&
-                    (existingCert.status === "ACTIVE" || !existingCert.status)
-                      ? existingCert
-                      : null;
-                  return (
-                    <article key={ev.id} className="event-card">
-                      <div className="event-card-body">
-                        <div className="event-card-top">
-                          <span className="event-id-badge">Etkinlik #{ev.id}</span>
-                          <div className="badge-group">
-                            <span className="status-badge registered">Kayıtlı ✓</span>
-                            <span
-                              className={`status-badge ${
-                                attState?.badgeClass || "inactive"
-                              }`}
-                            >
-                              {attState?.label}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="event-community-line">{ev.community}</div>
-                        <h3 className="event-title">{ev.title}</h3>
-
-                        <div className="event-meta">
-                          <div className="meta-row">
-                            <span className="meta-label">📅 Tarih &amp; Saat (TSİ):</span>
-                            <span className="meta-value">
-                              {formatTurkeyDateOnly(ev.date)} • {ev.startTime} -{" "}
-                              {ev.endTime}
-                            </span>
-                          </div>
-
-                          <div className="meta-row">
-                            <span className="meta-label">📍 Konum:</span>
-                            <span className="meta-value">
-                              {ev.location?.campus} / {ev.location?.building} (
-                              {ev.location?.room})
-                            </span>
-                          </div>
-
-                          <div className="meta-row">
-                            <span className="meta-label">📌 Etkinlik Durumu:</span>
-                            <span className="meta-value">{ev.statusLabel}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="event-card-actions" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => onSelectEvent(ev.id)}
-                        >
-                          {isVerifiedAttended
-                            ? "Etkinlik Detayını Gör"
-                            : "Detay & QR Katılım Kodu"}
-                        </button>
-
-                        {isVerifiedAttended && activeCert && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => setSelectedCertificateModal(activeCert)}
-                          >
-                            🎓 Sertifikayı Görüntüle
-                          </button>
-                        )}
-
-                        {isVerifiedAttended && !activeCert && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={issuingEventId === ev.id}
-                            onClick={() => handleIssueCertificate(ev.id)}
-                          >
-                            {issuingEventId === ev.id
-                              ? "Sertifika Üretiliyor..."
-                              : "🎓 Sertifika Oluştur"}
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* 5. Kronolojik Katılım Zaman Çizelgesi */}
-          <section className="card-panel timeline-panel">
-            <div className="panel-header-flex">
-              <div>
-                <h2>Katılım Zaman Çizelgesi</h2>
-                <p className="panel-subtitle">
-                  Etkinlik geçmişiniz kronolojik olarak listelenir. Yalnızca blokzincir
-                  üzerinde işlem özeti (`txHash`) doğrulanmış işlemler için Monad Explorer
-                  bağlantısı gösterilir.
-                </p>
               </div>
 
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() =>
-                  setTimelineDirection((prev) => (prev === "DESC" ? "ASC" : "DESC"))
-                }
-              >
-                {timelineDirection === "DESC"
-                  ? "Sıralama: Yeniden Eskiye ↓"
-                  : "Sıralama: Eskiden Yeniye ↑"}
-              </button>
-            </div>
-
-            <div className="timeline-list">
-              {sortedTimeline.map((item) => (
-                <div key={item.eventId} className="timeline-item">
-                  <div
-                    className={`timeline-dot ${
-                      item.isAttended ? "verified" : "pending"
-                    }`}
-                  />
-                  <div className="timeline-content">
-                    <div className="timeline-top-row">
-                      <div>
-                        <span className="timeline-community">{item.community}</span>
-                        <h4
-                          className="timeline-title"
-                          onClick={() => onSelectEvent(item.eventId)}
-                        >
-                          Etkinlik #{item.eventId}: {item.title}
-                        </h4>
-                      </div>
-                      <span
-                        className={`status-badge ${
-                          item.attendanceState.badgeClass
-                        }`}
+              {/* Katılınan Topluluklar */}
+              <div className="stitch-card-low" style={{ padding: "1.5rem", borderRadius: "1rem" }}>
+                <h4 className="font-headline-sm" style={{ margin: "0 0 1rem 0" }}>
+                  Katıldığınız Topluluklar
+                </h4>
+                {studentCommunities.length === 0 ? (
+                  <p className="font-body-sm text-outline" style={{ margin: 0 }}>
+                    Henüz bir topluluğun etkinliğine kayıt olmadınız.
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {studentCommunities.map((comm) => (
+                      <div
+                        key={comm}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          fontSize: "0.8125rem",
+                          color: "var(--stitch-on-surface-variant)",
+                        }}
                       >
-                        {item.attendanceState.label}
-                      </span>
-                    </div>
-
-                    <div className="timeline-meta-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-                      <div>
-                        <span>
-                          📅 {formatTurkeyDateTime(item.startAt)} (TSİ)
+                        <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--stitch-primary)" }}>
+                          check_circle
                         </span>
-                        {item.explorerTxUrl && (
-                          <a
-                            href={item.explorerTxUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="timeline-explorer-link"
-                            style={{ marginLeft: "0.75rem" }}
-                          >
-                            Monad Explorer&apos;da İşlemi Gör ↗
-                          </a>
-                        )}
+                        {comm}
                       </div>
-
-                      {item.isAttended && (
-                        <div>
-                          {certificatesByEventId.get(Number(item.eventId)) ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setSelectedCertificateModal(certificatesByEventId.get(Number(item.eventId)))}
-                            >
-                              🎓 Sertifikayı Görüntüle
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              disabled={issuingEventId === item.eventId}
-                              onClick={() => handleIssueCertificate(item.eventId)}
-                            >
-                              {issuingEventId === item.eventId ? "Sertifika Üretiliyor..." : "🎓 Sertifika Oluştur"}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                )}
+              </div>
             </div>
-          </section>
-        </>
-      )}
+          </div>
+        </div>
 
-      {/* Yatay A4 Sertifika Önizleme ve PDF İndirme Modalı */}
-      {selectedCertificateModal && (
-        <CertificateModal
-          certificate={selectedCertificateModal}
-          onClose={() => setSelectedCertificateModal(null)}
-          onOpenVerifyPage={onOpenVerifyPage}
-        />
-      )}
+        {/* Sertifika Detay / Önizleme Modalı */}
+        {selectedCertificateModal && (
+          <CertificateModal
+            certificate={selectedCertificateModal}
+            onClose={() => setSelectedCertificateModal(null)}
+            onOpenVerifyPage={onOpenVerifyPage}
+          />
+        )}
+      </div>
     </div>
   );
 }
