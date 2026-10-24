@@ -7,10 +7,40 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & Build outputs (Frontend & Backend)
 node_modules
+server/node_modules
 dist
 dist-ssr
+server/dist
+.vite
+coverage
 *.local
+
+# Environment, Keystore & Secrets (Never commit private keys or passwords)
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+*.pem
+*.key
+*.keystore
+keystore/
+secrets.json
+
+# Local Runtime Data & SQLite/Temp DB files
+server/data/*.json
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Hardhat local runtime history & deployments
+cache/console-history.txt
+ignition/deployments/
+coverage.json
 
 # Editor directories and files
 .vscode/*

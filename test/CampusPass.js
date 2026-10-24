@@ -169,4 +169,65 @@ describe("CampusPass", function () {
     expect((await campusPass.events(1)).registeredCount).to.equal(1n);
     expect((await campusPass.events(2)).registeredCount).to.equal(1n);
   });
+
+  it("çoklu katılımcıda yalnızca doğrulanan öğrencinin katılımını işaretlemeli", async function () {
+    const { campusPass, participant, anotherUser } = await networkHelpers.loadFixture(deployCampusPass);
+
+    await campusPass.createEvent("Blokzincir Semineri", 5);
+    await campusPass.connect(participant).registerForEvent(1);
+    await campusPass.connect(anotherUser).registerForEvent(1);
+
+    await campusPass.markAttendance(1, participant.address);
+
+    expect(await campusPass.attended(1, participant.address)).to.equal(true);
+    expect(await campusPass.attended(1, anotherUser.address)).to.equal(false);
+    expect((await campusPass.events(1)).registeredCount).to.equal(2n);
+  });
+
+  it("farklı etkinliklerin organizatörleri birbirinin etkinliğinde katılım işaretleyememeli", async function () {
+    const { campusPass, participant, anotherUser } = await networkHelpers.loadFixture(deployCampusPass);
+
+    await campusPass.createEvent("Topluluk Etkinliği 1", 10);
+    await campusPass.connect(anotherUser).createEvent("Topluluk Etkinliği 2", 10);
+
+    await campusPass.connect(participant).registerForEvent(1);
+
+    await expect(
+      campusPass.connect(anotherUser).markAttendance(1, participant.address)
+    ).to.be.revertedWith("Not organizer");
+  });
+
+  it("EIP-191 cüzdan imzalı QR doğrulama akışı ile katılımı güvenli şekilde doğrulamalı", async function () {
+    const { campusPass, participant, anotherUser } = await networkHelpers.loadFixture(deployCampusPass);
+
+    await campusPass.createEvent("Monad Workshop", 20);
+    await campusPass.connect(participant).registerForEvent(1);
+
+    const contractAddress = await campusPass.getAddress();
+    const message = [
+      "CampusPass Katilim Dogrulama",
+      "Version: CP1",
+      "ChainId: 10143",
+      `Contract: ${contractAddress}`,
+      "EventId: 1",
+      `Participant: ${participant.address}`,
+      "Nonce: 0x1234567890abcdef1234567890abcdef",
+      "IssuedAt: 1761250000",
+      "ExpiresAt: 1761250180",
+    ].join("\n");
+
+    const validSignature = await participant.signMessage(message);
+    const recoveredSigner = ethers.verifyMessage(message, validSignature);
+    expect(recoveredSigner).to.equal(participant.address);
+
+    const spoofedSignature = await anotherUser.signMessage(message);
+    const spoofedRecover = ethers.verifyMessage(message, spoofedSignature);
+    expect(spoofedRecover).to.not.equal(participant.address);
+
+    await expect(campusPass.markAttendance(1, recoveredSigner))
+      .to.emit(campusPass, "AttendanceMarked")
+      .withArgs(1n, participant.address);
+
+    expect(await campusPass.attended(1, participant.address)).to.equal(true);
+  });
 });

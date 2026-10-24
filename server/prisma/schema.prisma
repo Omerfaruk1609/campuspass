@@ -1,0 +1,169 @@
+// CampusPass — Faz 9 PostgreSQL & Prisma Veri Modeli
+// Ağ: Monad Testnet (Chain ID: 10143)
+// Sözleşme: 0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// İleride öğrenci toplulukları / kulüpleri için genişletilebilir model
+model Community {
+  id                   String          @id @default(cuid())
+  slug                 String          @unique
+  name                 String          @unique
+  description          String?
+  leadOrganizerAddress String
+  verified             Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  events               EventMetadata[]
+
+  @@index([leadOrganizerAddress])
+}
+
+/// Zincir dışı genişletilmiş etkinlik metadata modeli
+model EventMetadata {
+  id                   String                @id @default(cuid())
+  chainId              Int
+  contractAddress      String
+  eventId              Int
+  organizerAddress     String
+  title                String?
+  capacity             Int?
+  description          String
+  community            String
+  communityId          String?
+  category             String
+  startAt              DateTime
+  endAt                DateTime
+  registrationDeadline DateTime
+  campus               String
+  building             String
+  room                 String
+  posterUrl            String?
+  cancelled            Boolean               @default(false)
+  cancelReason         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  communityRef         Community?            @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  registrations        IndexedRegistration[]
+  attendances          IndexedAttendance[]
+  certificates         AttendanceCertificate[]
+
+  @@unique([chainId, contractAddress, eventId], name: "chainId_contractAddress_eventId")
+  @@index([organizerAddress])
+  @@index([category])
+  @@index([community])
+  @@index([startAt])
+}
+
+/// Blokzincir üzerindeki UserRegistered olaylarının indekslenmiş tablosu
+model IndexedRegistration {
+  id                 String              @id @default(cuid())
+  chainId            Int
+  contractAddress    String
+  eventId            Int
+  participantAddress String
+  transactionHash    String
+  blockNumber        Int
+  logIndex           Int
+  createdAt          DateTime            @default(now())
+
+  eventMetadata      EventMetadata?      @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
+  attendance         IndexedAttendance?
+
+  @@unique([chainId, contractAddress, transactionHash, logIndex], name: "reg_tx_log_unique")
+  @@unique([chainId, contractAddress, eventId, participantAddress], name: "reg_event_participant_unique")
+  @@index([participantAddress])
+  @@index([chainId, contractAddress, eventId])
+  @@index([blockNumber])
+}
+
+/// Blokzincir üzerindeki AttendanceMarked olaylarının indekslenmiş tablosu
+model IndexedAttendance {
+  id                 String                 @id @default(cuid())
+  chainId            Int
+  contractAddress    String
+  eventId            Int
+  participantAddress String
+  transactionHash    String
+  blockNumber        Int
+  logIndex           Int
+  createdAt          DateTime               @default(now())
+
+  eventMetadata      EventMetadata?         @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
+  registration       IndexedRegistration?   @relation(fields: [chainId, contractAddress, eventId, participantAddress], references: [chainId, contractAddress, eventId, participantAddress], onDelete: Restrict, onUpdate: Cascade)
+  certificate        AttendanceCertificate?
+
+  @@unique([chainId, contractAddress, transactionHash, logIndex], name: "att_tx_log_unique")
+  @@unique([chainId, contractAddress, eventId, participantAddress], name: "att_event_participant_unique")
+  @@index([participantAddress])
+  @@index([chainId, contractAddress, eventId])
+  @@index([blockNumber])
+}
+
+/// Blokzincir olay indeksleyicisinin son işlenen blok durumunu tutan tablo
+model IndexerCheckpoint {
+  id                 String   @id @default(cuid())
+  chainId            Int
+  contractAddress    String
+  lastProcessedBlock Int
+  updatedAt          DateTime @updatedAt
+
+  @@unique([chainId, contractAddress], name: "chainId_contractAddress")
+}
+
+/// SIWE (EIP-4361) tek kullanımlık kriptografik giriş nonce modeli
+model AuthNonce {
+  id            String    @id @default(cuid())
+  nonce         String    @unique
+  walletAddress String?
+  domain        String
+  chainId       Int
+  issuedAt      DateTime  @default(now())
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
+/// SIWE doğrulaması sonrası oluşturulan süreli organizatör oturumu
+model OrganizerSession {
+  id               String    @id @default(cuid())
+  sessionTokenHash String    @unique
+  csrfToken        String
+  walletAddress    String
+  chainId          Int
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([walletAddress])
+  @@index([expiresAt])
+}
+
+/// İleride doğrulanmış katılımlar için NFT / dijital sertifika üretimine hazır genişletilebilir model
+model AttendanceCertificate {
+  id                 String            @id @default(cuid())
+  chainId            Int
+  contractAddress    String
+  eventId            Int
+  participantAddress String
+  attendanceTxHash   String
+  certificateHash    String            @unique
+  metadataUri        String?
+  issuedAt           DateTime          @default(now())
+
+  eventMetadata      EventMetadata     @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
+  attendance         IndexedAttendance @relation(fields: [chainId, contractAddress, eventId, participantAddress], references: [chainId, contractAddress, eventId, participantAddress], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([chainId, contractAddress, eventId, participantAddress], name: "cert_event_participant_unique")
+  @@index([participantAddress])
+}

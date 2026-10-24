@@ -1,0 +1,25 @@
+{
+  "name": "campuspass-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "CampusPass Backend API, SIWE Auth & Monad Testnet Event Indexer",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "indexer": "node src/indexer/runIndexer.js",
+    "db:validate": "prisma validate --schema=./prisma/schema.prisma",
+    "db:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=./prisma/schema.prisma",
+    "test:postgres": "node tests/postgres.integration.test.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "ethers": "^6.14.0",
+    "express": "^5.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "prisma": "^6.5.0"
+  }
+}
