@@ -243,6 +243,19 @@ export function createEventIndexer({
         for (const att of existingAttsInRange) {
           const key = `${att.transactionHash.toLowerCase()}:${att.logIndex}`;
           if (!validTxLogKeys.has(key)) {
+            if (tx.attendanceCertificate) {
+              await tx.attendanceCertificate.updateMany({
+                where: {
+                  chainId: Number(chainId),
+                  contractAddress: normalizedContract,
+                  eventId: Number(att.eventId),
+                  participantAddress: String(att.participantAddress).toLowerCase(),
+                },
+                data: {
+                  status: "INVALIDATED_BY_REORG",
+                },
+              });
+            }
             await tx.indexedAttendance.delete({ where: { id: att.id } });
             metrics.reorgRemovedCount += 1;
           }

@@ -54,7 +54,6 @@ model EventMetadata {
   communityRef         Community?            @relation(fields: [communityId], references: [id], onDelete: SetNull)
   registrations        IndexedRegistration[]
   attendances          IndexedAttendance[]
-  certificates         AttendanceCertificate[]
 
   @@unique([chainId, contractAddress, eventId], name: "chainId_contractAddress_eventId")
   @@index([organizerAddress])
@@ -99,7 +98,6 @@ model IndexedAttendance {
 
   eventMetadata      EventMetadata?         @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
   registration       IndexedRegistration?   @relation(fields: [chainId, contractAddress, eventId, participantAddress], references: [chainId, contractAddress, eventId, participantAddress], onDelete: Restrict, onUpdate: Cascade)
-  certificate        AttendanceCertificate?
 
   @@unique([chainId, contractAddress, transactionHash, logIndex], name: "att_tx_log_unique")
   @@unique([chainId, contractAddress, eventId, participantAddress], name: "att_event_participant_unique")
@@ -149,21 +147,29 @@ model OrganizerSession {
   @@index([expiresAt])
 }
 
-/// İleride doğrulanmış katılımlar için NFT / dijital sertifika üretimine hazır genişletilebilir model
+/// Doğrulanmış blokzincir katılımları (AttendanceMarked) için kriptografik bütünlüklü dijital sertifika modeli
 model AttendanceCertificate {
-  id                 String            @id @default(cuid())
-  chainId            Int
-  contractAddress    String
-  eventId            Int
-  participantAddress String
-  attendanceTxHash   String
-  certificateHash    String            @unique
-  metadataUri        String?
-  issuedAt           DateTime          @default(now())
-
-  eventMetadata      EventMetadata     @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
-  attendance         IndexedAttendance @relation(fields: [chainId, contractAddress, eventId, participantAddress], references: [chainId, contractAddress, eventId, participantAddress], onDelete: Restrict, onUpdate: Cascade)
+  id                    String            @id @default(cuid())
+  certificateId         String            @unique
+  version               String            @default("CP-CERT-V1")
+  status                String            @default("ACTIVE")
+  chainId               Int
+  contractAddress       String
+  eventId               Int
+  eventTitle            String
+  organizerAddress      String
+  participantAddress    String
+  displayName           String?
+  attendanceTxHash      String
+  attendanceBlockNumber Int
+  attendanceLogIndex    Int
+  certificateHash       String            @unique
+  integritySignature    String
+  metadataUri           String?
+  issuedAt              DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   @@unique([chainId, contractAddress, eventId, participantAddress], name: "cert_event_participant_unique")
   @@index([participantAddress])
+  @@index([chainId, contractAddress, eventId])
 }

@@ -130,6 +130,23 @@ export function createBlockchainService({
     }
   }
 
+  async function getLatestBlockNumber() {
+    try {
+      const c = getContractInstance();
+      const activeProvider = provider || c.runner?.provider || c.provider;
+      if (!activeProvider || typeof activeProvider.getBlockNumber !== "function") {
+        return null;
+      }
+      const num = await activeProvider.getBlockNumber();
+      return Number(num);
+    } catch (err) {
+      throw ApiError.badGateway(
+        "Blokzincir düğümünden (RPC) güncel blok numarası okunamadı.",
+        { reason: err.message }
+      );
+    }
+  }
+
   return {
     chainId: Number(chainId),
     contractAddress: checksumContractAddress,
@@ -139,5 +156,6 @@ export function createBlockchainService({
     verifyOnChainOrganizer,
     getAllOnChainEvents,
     getStudentEventOnChainState,
+    getLatestBlockNumber,
   };
 }

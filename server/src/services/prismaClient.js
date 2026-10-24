@@ -82,7 +82,11 @@ function matchesWhere(row, where = {}) {
       continue;
     }
 
-    if (key === "reg_event_participant_unique" || key === "att_event_participant_unique") {
+    if (
+      key === "reg_event_participant_unique" ||
+      key === "att_event_participant_unique" ||
+      key === "cert_event_participant_unique"
+    ) {
       if (
         Number(row.chainId) !== Number(expected.chainId) ||
         String(row.contractAddress).toLowerCase() !==
@@ -261,6 +265,12 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
     }
 
     if (tableName === "attendanceCertificate") {
+      if (candidate.certificateId) {
+        const dupCertId = rows.find((r) => r.certificateId === candidate.certificateId);
+        if (dupCertId) {
+          throw createUniqueConstraintError(["certificateId"]);
+        }
+      }
       const dupHash = rows.find((r) => r.certificateHash === candidate.certificateHash);
       if (dupHash) {
         throw createUniqueConstraintError(["certificateHash"]);

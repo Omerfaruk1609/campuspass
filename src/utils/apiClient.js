@@ -245,6 +245,7 @@ export async function ensureOrganizerSiweSession({
   signer,
   walletAddress,
   chainId = MONAD_CHAIN_ID,
+  statement = "CampusPass organizator yonetim oturumu icin cuzdaninizi dogrulayin.",
   customFetch = null,
 }) {
   const checksumWallet = ethers.getAddress(walletAddress);
@@ -293,6 +294,7 @@ export async function ensureOrganizerSiweSession({
   const siweMessage = buildClientSiweMessage({
     domain,
     address: checksumWallet,
+    statement,
     uri,
     chainId,
     nonce,
@@ -317,6 +319,100 @@ export async function ensureOrganizerSiweSession({
   };
 
   return activeAuthState;
+}
+
+/**
+ * Öğrenci sertifika oluşturma / listeleme işlemleri için SIWE oturumunu başlatır veya doğrular.
+ */
+export async function ensureStudentSiweSession({
+  signer,
+  walletAddress,
+  chainId = MONAD_CHAIN_ID,
+  customFetch = null,
+}) {
+  return ensureOrganizerSiweSession({
+    signer,
+    walletAddress,
+    chainId,
+    statement:
+      "CampusPass ogrenci sertifika islemleri icin cuzdaninizi dogrulayin.",
+    customFetch,
+  });
+}
+
+export async function issueCertificateOnBackend({
+  eventId,
+  walletAddress,
+  displayName = "",
+  customFetch = null,
+}) {
+  const res = await apiRequest("/certificates", {
+    method: "POST",
+    body: {
+      eventId: Number(eventId),
+      walletAddress,
+      displayName,
+    },
+    customFetch,
+  });
+  return {
+    certificate: res.data,
+    created: Boolean(res.created),
+    idempotent: Boolean(res.idempotent),
+  };
+}
+
+export async function fetchMyCertificatesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/certificates/me", {
+    method: "GET",
+    customFetch,
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function fetchWalletCertificatesFromBackend(
+  walletAddress,
+  { customFetch = null } = {}
+) {
+  const checksumWallet = ethers.getAddress(walletAddress);
+  const res = await apiRequest(
+    `/certificates/wallet/${encodeURIComponent(checksumWallet)}`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function fetchCertificateByIdFromBackend(
+  certificateId,
+  { customFetch = null } = {}
+) {
+  const cleanId = String(certificateId || "").trim().toUpperCase();
+  const res = await apiRequest(
+    `/certificates/${encodeURIComponent(cleanId)}`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return res.data;
+}
+
+export async function fetchCertificateVerificationFromBackend(
+  certificateId,
+  { customFetch = null } = {}
+) {
+  const cleanId = String(certificateId || "").trim().toUpperCase();
+  const res = await apiRequest(
+    `/certificates/${encodeURIComponent(cleanId)}/verify`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return res.data;
 }
 
 export async function logoutOrganizerSiweSession({ customFetch = null } = {}) {
