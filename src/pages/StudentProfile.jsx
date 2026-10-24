@@ -26,6 +26,7 @@ import {
   downloadCertificatePdf,
 } from "../utils/certificatePdf";
 import {
+  ATTENDANCE_STATE,
   calculateStudentStats,
   fetchStudentProfileData,
 } from "../utils/studentProfile";
@@ -70,26 +71,29 @@ export default function StudentProfile({
   const loadCertificatesForAccount = useCallback(async (targetAccount) => {
     if (!targetAccount) {
       setCertificates([]);
-      return;
+      return [];
     }
 
     setLoadingCertificates(true);
     try {
       const authState = getActiveAuthState();
+      let certs = [];
       if (
         authState.authenticated &&
         authState.walletAddress &&
         authState.walletAddress.toLowerCase() === targetAccount.toLowerCase()
       ) {
-        const myCerts = await fetchMyCertificatesFromBackend();
-        setCertificates(myCerts);
+        certs = await fetchMyCertificatesFromBackend();
       } else {
-        const publicCerts = await fetchWalletCertificatesFromBackend(targetAccount);
-        setCertificates(publicCerts);
+        certs = await fetchWalletCertificatesFromBackend(targetAccount);
       }
+      const safeList = Array.isArray(certs) ? certs : [];
+      setCertificates(safeList);
+      return safeList;
     } catch {
       // Backend çevrimdışıysa sertifika listesini boş tut, profil akışını bozma
       setCertificates([]);
+      return [];
     } finally {
       setLoadingCertificates(false);
     }
@@ -114,7 +118,7 @@ export default function StudentProfile({
         }
 
         const contract = getReadOnlyContract();
-        const [data] = await Promise.all([
+        const [data, certList] = await Promise.all([
           fetchStudentProfileData({
             walletAddress: targetAccount,
             contract,
@@ -124,6 +128,9 @@ export default function StudentProfile({
           loadCertificatesForAccount(targetAccount),
         ]);
         setProfile(data);
+        if (Array.isArray(certList)) {
+          setCertificates(certList);
+        }
         setRpcError(null);
       } catch (err) {
         setProfile(EMPTY_PROFILE);
@@ -587,7 +594,16 @@ export default function StudentProfile({
               <div className="events-grid">
                 {displayedEvents.map((ev) => {
                   const attState = ev.attendanceState;
+                  const isVerifiedAttended = Boolean(
+                    ev.isAttended ||
+                    attState?.code === ATTENDANCE_STATE.ATTENDED_VERIFIED
+                  );
                   const existingCert = certificatesByEventId.get(Number(ev.id));
+                  const activeCert =
+                    existingCert &&
+                    (existingCert.status === "ACTIVE" || !existingCert.status)
+                      ? existingCert
+                      : null;
                   return (
                     <article key={ev.id} className="event-card">
                       <div className="event-card-body">
@@ -638,22 +654,22 @@ export default function StudentProfile({
                           className="btn btn-primary"
                           onClick={() => onSelectEvent(ev.id)}
                         >
-                          {ev.isAttended
+                          {isVerifiedAttended
                             ? "Etkinlik Detayını Gör"
                             : "Detay & QR Katılım Kodu"}
                         </button>
 
-                        {ev.isAttended && existingCert && (
+                        {isVerifiedAttended && activeCert && (
                           <button
                             type="button"
                             className="btn btn-secondary"
-                            onClick={() => setSelectedCertificateModal(existingCert)}
+                            onClick={() => setSelectedCertificateModal(activeCert)}
                           >
                             🎓 Sertifikayı Görüntüle
                           </button>
                         )}
 
-                        {ev.isAttended && !existingCert && (
+                        {isVerifiedAttended && !activeCert && (
                           <button
                             type="button"
                             className="btn btn-secondary"
@@ -726,19 +742,45 @@ export default function StudentProfile({
                       </span>
                     </div>
 
-                    <div className="timeline-meta-row">
-                      <span>
-                        📅 {formatTurkeyDateTime(item.startAt)} (TSİ)
-                      </span>
-                      {item.explorerTxUrl && (
-                        <a
-                          href={item.explorerTxUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="timeline-explorer-link"
-                        >
-                          Monad Explorer&apos;da İşlemi Gör ↗
-                        </a>
+                    <div className="timeline-meta-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                      <div>
+                        <span>
+                          📅 {formatTurkeyDateTime(item.startAt)} (TSİ)
+                        </span>
+                        {item.explorerTxUrl && (
+                          <a
+                            href={item.explorerTxUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="timeline-explorer-link"
+                            style={{ marginLeft: "0.75rem" }}
+                          >
+                            Monad Explorer&apos;da İşlemi Gör ↗
+                          </a>
+                        )}
+                      </div>
+
+                      {item.isAttended && (
+                        <div>
+                          {certificatesByEventId.get(Number(item.eventId)) ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setSelectedCertificateModal(certificatesByEventId.get(Number(item.eventId)))}
+                            >
+                              🎓 Sertifikayı Görüntüle
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={issuingEventId === item.eventId}
+                              onClick={() => handleIssueCertificate(item.eventId)}
+                            >
+                              {issuingEventId === item.eventId ? "Sertifika Üretiliyor..." : "🎓 Sertifika Oluştur"}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

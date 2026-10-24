@@ -1982,3 +1982,159 @@
   overflow: hidden;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
+
+/* =====================================================================
+   FAZ 11 — Organizatör Yönetim Paneli, Analitik & Katılımcı Tabloları
+   ===================================================================== */
+
+.analytics-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.analytics-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.organizer-badge-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.5rem 0.85rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.organizer-badge-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-main);
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  text-align: left;
+}
+
+.analytics-table thead tr {
+  background: rgba(15, 23, 42, 0.7);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.analytics-table th {
+  padding: 0.85rem 1rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.analytics-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.analytics-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.analytics-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.participant-wallet-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.copy-mini-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.copy-mini-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.explorer-mini-link {
+  color: #60a5fa;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+}
+
+.explorer-tx-pill {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  padding: 0.2rem 0.45rem;
+  border-radius: 5px;
+  text-decoration: none;
+}
+
+.explorer-tx-pill:hover {
+  background: rgba(59, 130, 246, 0.25);
+  text-decoration: underline;
+}
+
+.mini-progress-bar {
+  width: 100%;
+  max-width: 90px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #3b82f6);
+  border-radius: 3px;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+}
+
+.pagination-info {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+

@@ -415,6 +415,111 @@ export async function fetchCertificateVerificationFromBackend(
   return res.data;
 }
 
+/**
+ * Faz 11 — Organizatör Analitik ve Yönetim Paneli API İstekleri
+ */
+export async function fetchOrganizerDashboardFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/organizer/dashboard", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function fetchOrganizerEventsFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/organizer/events", {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    events: res.data || [],
+    checkpoint: res.checkpoint || null,
+  };
+}
+
+export async function fetchOrganizerEventAnalyticsFromBackend(
+  eventId,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/organizer/events/${Number(eventId)}/analytics`, {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function fetchOrganizerEventParticipantsFromBackend(
+  eventId,
+  { page = 1, limit = 20, search = "", status = "ALL", customFetch = null } = {}
+) {
+  const params = new URLSearchParams();
+  if (page) params.set("page", String(page));
+  if (limit) params.set("limit", String(limit));
+  if (search) params.set("search", search);
+  if (status && status !== "ALL") params.set("status", status);
+
+  const queryStr = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiRequest(
+    `/organizer/events/${Number(eventId)}/participants${queryStr}`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return res.data;
+}
+
+export async function fetchOrganizerTimeseriesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/organizer/analytics/timeseries", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function downloadOrganizerEventCsv(
+  eventId,
+  { type = "participants", customFetch = null } = {}
+) {
+  const fetchFn = customFetch || globalThis.fetch;
+  const url = `${API_BASE_URL}/organizer/events/${Number(eventId)}/export?type=${encodeURIComponent(type)}`;
+
+  const response = await fetchFn(url, {
+    method: "GET",
+    headers: {
+      Accept: "text/csv, application/json",
+    },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const json = await response.json().catch(() => null);
+    const msg = json?.error?.message || `CSV indirilemedi (HTTP ${response.status})`;
+    throw new Error(msg);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  let fileName = `CampusPass_Etkinlik_${eventId}_${type}.csv`;
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  if (match && match[1]) {
+    fileName = match[1];
+  }
+
+  if (typeof globalThis.window !== "undefined" && globalThis.document) {
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = globalThis.document.createElement("a");
+    a.href = downloadUrl;
+    a.download = fileName;
+    globalThis.document.body.appendChild(a);
+    a.click();
+    globalThis.document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+  }
+
+  return { fileName, blob };
+}
+
 export async function logoutOrganizerSiweSession({ customFetch = null } = {}) {
   try {
     await apiRequest("/auth/logout", { method: "POST", customFetch });
