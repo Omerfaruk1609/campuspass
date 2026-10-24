@@ -26,7 +26,8 @@
 * **Kimlik Doğrulama:** SIWE (Sign-In with Ethereum / EIP-4361) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token`
 * **Blokzincir Etkileşimi & Indexer:** Ethers.js v6 (Salt-okunur RPC provider ile `EventCreated`, `UserRegistered`, `AttendanceMarked` indeksleme ve reorg koruması)
 * **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` doğrulamalı, `CP-CERT-V1` SHA-256 + HMAC bütünlük mühürlü, yatay A4 PDF indirilebilir ve cüzdan bağlantısı gerektirmeden `/verify/:certificateId` üzerinden doğrulanabilir sertifika sistemi
-* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (75 kapsamlı Mocha testi + 5 gerçek PostgreSQL entegrasyon testi)
+* **Organizatör Yönetim Paneli & Analitik (Faz 11):** Üniversite topluluklarının etkinliklerini, dönüşüm ve katılım oranlarını, tekil öğrenci erişimlerini yönetebildiği KPI kartları, trend grafikleri, sayfalanmış katılımcı tablosu, formula injection korumalı CSV dışa aktarımı ve anlık indexer senkronizasyon göstergesi
+* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (91 kapsamlı Mocha testi + 5 gerçek PostgreSQL entegrasyon testi)
 
 ```text
 campuspass/
@@ -169,12 +170,20 @@ Backend sunucusu kapalıyken uygulama çökmez ve veri kaybı yaşanmaz:
 * `GET /api/certificates/:certificateId` — Sertifika detaylarını (`displayName` hariç) döndürür (Cüzdan bağlantısı gerektirmez).
 * `GET /api/certificates/:certificateId/verify` — Sertifikayı 4 katmanda (PostgreSQL kaydı, `CP-CERT-V1` kriptografik bütünlük mührü, `IndexedAttendance` log kanıtı ve canlı Monad Testnet `CampusPass.sol` sözleşmesi) doğrular (`VERIFIED`, `NOT_FOUND`, `INVALID`, `UNVERIFIABLE_NOW`).
 
+### Organizatör Yönetim Paneli ve Analitik (Faz 11) Endpoint'leri
+* `GET /api/organizer/dashboard` — Giriş yapmış organizatörün (SIWE oturumu zorunlu) toplu KPI metriklerini, genel katılım oranını, tekil katılımcı sayısını ve etkinlik listesini döner.
+* `GET /api/organizer/events` — Organizatörün düzenlediği etkinliklerin güncel durum ve katılım özetlerini listeler.
+* `GET /api/organizer/events/:eventId/analytics` — Belirli bir etkinliğe ait detaylı dönüşüm oranlarını (doluluk, katılım, sertifika dönüşümü, vazgeçme/drop-off) döner (Canlı blokzincir organizatör kontrolü ile korunur).
+* `GET /api/organizer/events/:eventId/participants` — Etkinliğe kayıtlı öğrencilerin sayfalanmış ve filtrelenebilir (`ALL`, `ATTENDED`, `REGISTERED_ONLY`, `CERTIFIED`, `search`) durum tablosunu döner.
+* `GET /api/organizer/events/:eventId/export` — Etkinlik katılımcı listesini veya etkinlik özetini CSV formatında indirir. Spreadsheet Formula Injection saldırılarına karşı güvenli kaçış mekanizması içerir (`=`, `+`, `-`, `@` ön ekleri güvenli formatlanır).
+* `GET /api/organizer/timeseries` — Organizatörün etkinlikleri arasındaki kayıt ve katılım sayılarını karşılaştırmalı zaman serisi grafiği için döner.
+
 ---
 
 ## 6. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha testlerini çalıştır (61 mevcut + 14 Faz 10 Sertifika testi = 75 test)
+# Tüm Mocha testlerini çalıştır (75 mevcut + 16 Faz 11 Analitik testi = 91 test)
 npm test
 
 # Yalnızca Faz 9 Backend, SIWE ve Indexer testlerini çalıştır

@@ -235,6 +235,23 @@ export const migrateMetadataBodySchema = z.object({
   records: z.array(z.record(z.any())).min(1).max(100),
 });
 
+export const organizerParticipantQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  search: z.string().trim().max(100).optional().default(""),
+  status: z
+    .enum(["ALL", "REGISTERED_ONLY", "ATTENDED", "CERTIFIED"])
+    .optional()
+    .default("ALL"),
+});
+
+export const organizerExportQuerySchema = z.object({
+  type: z
+    .enum(["participants", "summary", "timeseries"])
+    .optional()
+    .default("participants"),
+});
+
 export const CERTIFICATE_ID_REGEX = /^CP-CERT-[0-9A-F]{32}$/i;
 
 export const certificateIdParamSchema = z.object({

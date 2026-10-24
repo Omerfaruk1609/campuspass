@@ -5,6 +5,8 @@ import HomePage from "./pages/HomePage";
 import EventPage from "./pages/EventPage";
 import StudentProfile from "./pages/StudentProfile";
 import CertificateVerificationPage from "./pages/CertificateVerificationPage";
+import OrganizerDashboardPage from "./pages/OrganizerDashboardPage";
+import OrganizerEventAnalyticsPage from "./pages/OrganizerEventAnalyticsPage";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
@@ -68,6 +70,7 @@ export default function App() {
     parseVerifyCertificateIdFromUrl() !== null ? "verify" : "all"
   );
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [organizerAnalyticsEventId, setOrganizerAnalyticsEventId] = useState(null);
   const [verifyCertificateId, setVerifyCertificateId] = useState(
     () => parseVerifyCertificateIdFromUrl() || ""
   );
@@ -829,6 +832,7 @@ export default function App() {
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setSelectedEventId(null);
+          setOrganizerAnalyticsEventId(null);
           if (typeof window !== "undefined" && window.history?.pushState) {
             if (tab === "verify") {
               const nextUrl = verifyCertificateId
@@ -918,6 +922,18 @@ export default function App() {
             onUpdateMetadata={handleUpdateEventMetadata}
             txState={txState}
           />
+        ) : organizerAnalyticsEventId !== null ? (
+          <OrganizerEventAnalyticsPage
+            key={`analytics-${organizerAnalyticsEventId}-${account || "guest"}`}
+            eventId={organizerAnalyticsEventId}
+            account={account}
+            chainId={chainId}
+            onBack={() => setOrganizerAnalyticsEventId(null)}
+            onOpenEventPage={(id) => {
+              setOrganizerAnalyticsEventId(null);
+              setSelectedEventId(id);
+            }}
+          />
         ) : activeTab === "verify" ? (
           <CertificateVerificationPage
             key={`verify-${verifyCertificateId || "empty"}`}
@@ -939,6 +955,19 @@ export default function App() {
             onSelectEvent={(id) => setSelectedEventId(id)}
             onExploreEvents={() => setActiveTab("all")}
             onOpenVerifyPage={handleOpenVerifyPage}
+            isConnecting={isConnecting}
+          />
+        ) : activeTab === "organizer" ? (
+          <OrganizerDashboardPage
+            key={`organizer-${account || "guest"}-${chainId || "none"}`}
+            account={account}
+            chainId={chainId}
+            onConnectWallet={handleConnectWallet}
+            onSelectEvent={(id) => setSelectedEventId(id)}
+            onSelectEventAnalytics={(id) => setOrganizerAnalyticsEventId(id)}
+            onCreateEventClick={() => {
+              setActiveTab("all");
+            }}
             isConnecting={isConnecting}
           />
         ) : (

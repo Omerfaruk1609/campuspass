@@ -5,9 +5,9 @@
   "type": "module",
   "description": "CampusPass Backend API, SIWE Auth & Monad Testnet Event Indexer",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "indexer": "node src/indexer/runIndexer.js",
+    "start": "node --env-file=.env src/index.js",
+    "dev": "node --env-file=.env --watch src/index.js",
+    "indexer": "node --env-file=.env src/indexer/runIndexer.js",
     "db:validate": "prisma validate --schema=./prisma/schema.prisma",
     "db:generate": "prisma generate --schema=./prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema=./prisma/schema.prisma",
