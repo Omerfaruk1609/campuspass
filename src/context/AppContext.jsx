@@ -74,6 +74,8 @@ export function AppProvider({
   });
 
   const [banner, setBanner] = useState(null);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [liveNotification, setLiveNotification] = useState(null);
 
   const computePendingItemsForAccount = useCallback(
     (currentAccount, serverMetadataMap = {}) => {
@@ -339,6 +341,64 @@ export function AppProvider({
       }
     };
   }, [account, loadEvents]);
+
+  // Canlı SSE Bildirim Akışı ve Okunmamış Bildirim Sayacı
+  useEffect(() => {
+    if (!sessionState?.authenticated || !sessionState?.walletAddress) {
+      setUnreadNotificationCount(0);
+      setLiveNotification(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    fetchUnreadNotificationCountFromBackend()
+      .then((data) => {
+        if (isMounted && typeof data?.unreadCount === "number") {
+          setUnreadNotificationCount(data.unreadCount);
+        }
+      })
+      .catch(() => {});
+
+    const disconnect = connectNotificationStream({
+      onNotification: (notif) => {
+        if (!isMounted) return;
+        setUnreadNotificationCount((prev) => prev + 1);
+        setLiveNotification(notif);
+      },
+      onUnreadCount: (data) => {
+        if (!isMounted) return;
+        if (typeof data?.unreadCount === "number") {
+          setUnreadNotificationCount(data.unreadCount);
+        }
+      },
+    });
+
+    return () => {
+      isMounted = false;
+      disconnect();
+    };
+  }, [sessionState?.authenticated, sessionState?.walletAddress]);
+
+  const handleMarkNotificationRead = useCallback(async (notificationId) => {
+    try {
+      await markNotificationAsReadOnBackend(notificationId);
+      setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    try {
+      await markAllNotificationsAsReadOnBackend();
+      setUnreadNotificationCount(0);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // Sekmeler arası oturum kapatma senkronizasyonunu dinle
   useEffect(() => {
@@ -944,6 +1004,12 @@ export function AppProvider({
     handleUpdateEventMetadata,
     handleRegisterEvent,
     handleMarkAttendance,
+    unreadNotificationCount,
+    setUnreadNotificationCount,
+    liveNotification,
+    setLiveNotification,
+    handleMarkNotificationRead,
+    handleMarkAllNotificationsRead,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

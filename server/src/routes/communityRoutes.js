@@ -61,6 +61,10 @@ export function createCommunityRoutes({
     communityController.unlinkEventFromCommunity
   );
 
+  // Topluluk Duyuruları (GET public/optional, POST requireAuthSession)
+  router.get("/:idOrSlug/announcements", optionalAuthSession, communityController.getAnnouncements);
+  router.post("/:idOrSlug/announcements", requireAuthSession, communityController.createAnnouncement);
+
   // Topluluk Analitiği
   router.get(
     "/:idOrSlug/analytics",

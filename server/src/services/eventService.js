@@ -135,7 +135,7 @@ function normalizeMetadataDates(validatedInput) {
  * - Blokzincir verisi ile PostgreSQL (Prisma) metadata ve indeks verilerini birleştirir.
  * - Yazma işlemlerinde organizatör yetkisini blokzincir üzerinden canlı doğrular.
  */
-export function createEventService({ prisma, blockchainService }) {
+export function createEventService({ prisma, blockchainService, notificationService = null }) {
   const { chainId, contractAddress, contractAddressNormalized } = blockchainService;
 
   function mergeOnChainAndDbEvent(
@@ -487,6 +487,35 @@ export function createEventService({ prisma, blockchainService }) {
           cancelReason: cancelled ? cancelReason : "",
         },
       });
+
+    if (cancelled && notificationService) {
+      try {
+        const attendees = await prisma.indexedRegistration.findMany({
+          where: {
+            chainId: Number(chainId),
+            contractAddress: contractAddressNormalized,
+            eventId: Number(eventId),
+          },
+          select: { participantAddress: true },
+        });
+        const recipients = attendees.map((a) => a.participantAddress);
+        if (recipients.length > 0) {
+          await notificationService.createNotificationsForRecipients({
+            recipients,
+            type: "EVENT_CANCELLED",
+            title: `Etkinlik İptal Edildi: ${onChainEvent.title}`,
+            message: cancelReason
+              ? `Etkinlik iptal edildi. Gerekçe: ${cancelReason}`
+              : `"${onChainEvent.title}" etkinliği organizatör tarafından iptal edildi.`,
+            destinationUrl: `/events/${eventId}`,
+            metadata: { eventId: Number(eventId), eventTitle: onChainEvent.title, cancelReason },
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
       return formatDbMetadataToClient(updated);
     }
 
@@ -515,7 +544,120 @@ export function createEventService({ prisma, blockchainService }) {
       },
     });
 
+
+    if (cancelled && notificationService) {
+      try {
+        const attendees = await prisma.indexedRegistration.findMany({
+          where: {
+            chainId: Number(chainId),
+            contractAddress: contractAddressNormalized,
+            eventId: Number(eventId),
+          },
+          select: { participantAddress: true },
+        });
+        const recipients = attendees.map((a) => a.participantAddress);
+        if (recipients.length > 0) {
+          await notificationService.createNotificationsForRecipients({
+            recipients,
+            type: "EVENT_CANCELLED",
+            title: `Etkinlik İptal Edildi: ${onChainEvent.title}`,
+            message: cancelReason
+              ? `Etkinlik iptal edildi. Gerekçe: ${cancelReason}`
+              : `"${onChainEvent.title}" etkinliği organizatör tarafından iptal edildi.`,
+            destinationUrl: `/events/${eventId}`,
+            metadata: { eventId: Number(eventId), eventTitle: onChainEvent.title, cancelReason },
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     return formatDbMetadataToClient(created);
+  }
+
+  async function createAnnouncement(eventId, callerWallet, { title, content }) {
+    const onChainEvent = await blockchainService.verifyOnChainOrganizer(
+      Number(eventId),
+      callerWallet
+    );
+
+    const cleanTitle = String(title || "").replace(/<[^>]*>?/gm, "").trim().slice(0, 120);
+    const cleanContent = String(content || "").replace(/<[^>]*>?/gm, "").trim().slice(0, 2000);
+
+    const announcement = await prisma.announcement.create({
+      data: {
+        targetType: "EVENT",
+        eventId: Number(eventId),
+        authorWallet: callerWallet.toLowerCase(),
+        title: cleanTitle,
+        content: cleanContent,
+        recipientCount: 0,
+      },
+    });
+
+    const attendees = await prisma.indexedRegistration.findMany({
+      where: {
+        chainId: Number(chainId),
+        contractAddress: contractAddressNormalized,
+        eventId: Number(eventId),
+      },
+      select: { participantAddress: true },
+    });
+
+    const recipients = [...new Set(attendees.map((a) => a.participantAddress.toLowerCase()))];
+    if (recipients.length > 0 && notificationService) {
+      try {
+        await notificationService.createNotificationsForRecipients({
+          recipients,
+          type: "EVENT_ANNOUNCEMENT",
+          title: `Duyuru: ${cleanTitle}`,
+          message: `${onChainEvent.title}: ${cleanContent}`.slice(0, 160),
+          destinationUrl: `/events/${eventId}`,
+          metadata: {
+            eventId: Number(eventId),
+            eventTitle: onChainEvent.title,
+            announcementId: announcement.id,
+          },
+        });
+      } catch {
+        // bildirim hatası ana kaydı engellemez
+      }
+    }
+
+    const updated = await prisma.announcement.update({
+      where: { id: announcement.id },
+      data: { recipientCount: recipients.length },
+    });
+
+    return updated;
+  }
+
+  async function getAnnouncements(eventId, { page = 1, limit = 20 } = {}) {
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
+    const where = { targetType: "EVENT", eventId: Number(eventId) };
+
+    const [total, items] = await Promise.all([
+      prisma.announcement.count({ where }),
+      prisma.announcement.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limitNum,
+      }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum) || 1,
+      },
+    };
   }
 
   return {
@@ -526,5 +668,7 @@ export function createEventService({ prisma, blockchainService }) {
     createOrSaveEventMetadata,
     updateEventMetadata,
     setEventCancelStatus,
+    createAnnouncement,
+    getAnnouncements,
   };
 }

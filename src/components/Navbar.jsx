@@ -290,6 +290,57 @@ export default function Navbar({
             </div>
           )}
 
+          {/* Notification Bell Button */}
+          {account && (
+            <Link
+              to="/notifications"
+              aria-label={`Bildirimler (${unreadNotificationCount} okunmamış)`}
+              title="Bildirimler"
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                backgroundColor: "var(--stitch-surface-container, rgba(255, 255, 255, 0.05))",
+                border: "1px solid rgba(185, 195, 255, 0.2)",
+                color: "var(--stitch-on-surface, #e2e8f0)",
+                textDecoration: "none",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                notifications
+              </span>
+              {unreadNotificationCount > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "-2px",
+                    right: "-2px",
+                    minWidth: "18px",
+                    height: "18px",
+                    padding: "0 4px",
+                    borderRadius: "9999px",
+                    backgroundColor: "#ef4444",
+                    color: "#ffffff",
+                    fontSize: "0.6875rem",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    border: "2px solid #03122e",
+                    lineHeight: 1,
+                  }}
+                >
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                </span>
+              )}
+            </Link>
+          )}
+
           {/* Wallet Connection / Session Button & Dropdown */}
           {account ? (
             <div style={{ position: "relative" }} ref={menuRef}>

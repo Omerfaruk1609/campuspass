@@ -291,6 +291,32 @@ export const studentProfileUpdateSchema = z.object({
   isPublic: z.boolean().optional().default(true),
 });
 
+export const notificationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  unreadOnly: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1"),
+  cursor: z.string().trim().optional(),
+});
+
+export const notificationIdParamSchema = z.object({
+  notificationId: z.string().trim().min(1, "notificationId zorunludur."),
+});
+
+export const notificationPreferencesUpdateSchema = z.object({
+  eventUpdates: z.boolean().optional(),
+  community: z.boolean().optional(),
+  announcements: z.boolean().optional(),
+  certificates: z.boolean().optional(),
+});
+
+export const announcementCreateSchema = z.object({
+  title: safeTextField("Duyuru başlığı", 120, true),
+  content: safeTextField("Duyuru içeriği", 2000, true),
+});
+
 export function parseWithZod(schema, payload) {
   const result = schema.safeParse(payload);
   if (!result.success) {

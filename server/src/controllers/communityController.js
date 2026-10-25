@@ -1,3 +1,5 @@
+import { announcementCreateSchema, parseWithZod } from "../utils/validation.js";
+
 export function createCommunityController({ communityService }) {
   if (!communityService) {
     throw new Error("createCommunityController: communityService dependency is required.");
@@ -203,6 +205,32 @@ export function createCommunityController({ communityService }) {
     }
   }
 
+  async function createAnnouncement(req, res, next) {
+    try {
+      const { idOrSlug } = req.params;
+      const callerWallet = req.session.walletAddress;
+      const validated = parseWithZod(announcementCreateSchema, req.body);
+      const result = await communityService.createAnnouncement(idOrSlug, callerWallet, validated);
+      res.status(201).json({
+        success: true,
+        message: "Duyuru başarıyla yayınlandı.",
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async function getAnnouncements(req, res, next) {
+    try {
+      const { idOrSlug } = req.params;
+      const result = await communityService.getAnnouncements(idOrSlug, req.query);
+      res.json({ success: true, data: result.items, pagination: result.pagination });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   return {
     createCommunity,
     getCommunities,
@@ -221,5 +249,7 @@ export function createCommunityController({ communityService }) {
     linkEventToCommunity,
     unlinkEventFromCommunity,
     getCommunityAnalytics,
+    createAnnouncement,
+    getAnnouncements,
   };
 }

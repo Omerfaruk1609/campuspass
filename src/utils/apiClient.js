@@ -941,3 +941,193 @@ export async function updateStudentProfileOnBackend(payload, { customFetch = nul
   });
   return res.data;
 }
+
+export async function fetchNotificationsFromBackend(
+  { page = 1, limit = 20, unreadOnly = false, cursor = undefined } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams();
+  if (page) params.set("page", String(page));
+  if (limit) params.set("limit", String(limit));
+  if (unreadOnly) params.set("unreadOnly", "true");
+  if (cursor) params.set("cursor", String(cursor));
+
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiRequest(`/notifications${qs}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function fetchUnreadNotificationCountFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/unread-count", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data || { unreadCount: 0 };
+}
+
+export async function markNotificationAsReadOnBackend(notificationId, { customFetch = null } = {}) {
+  const res = await apiRequest(`/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "PATCH",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function markAllNotificationsAsReadOnBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/read-all", {
+    method: "PATCH",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function deleteNotificationOnBackend(notificationId, { customFetch = null } = {}) {
+  const res = await apiRequest(`/notifications/${encodeURIComponent(notificationId)}`, {
+    method: "DELETE",
+    customFetch,
+  });
+  return res.message;
+}
+
+export async function fetchNotificationPreferencesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/preferences", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function updateNotificationPreferencesOnBackend(payload, { customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/preferences", {
+    method: "PATCH",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export function connectNotificationStream({
+  onNotification = null,
+  onUnreadCount = null,
+  onConnected = null,
+  onError = null,
+  EventSourceClass = null,
+} = {}) {
+  const ES = EventSourceClass || (typeof window !== "undefined" ? window.EventSource : globalThis.EventSource);
+  if (!ES) {
+    return () => {};
+  }
+
+  const streamUrl = `${API_BASE_URL}/notifications/stream`;
+  let es = null;
+
+  try {
+    es = new ES(streamUrl, { withCredentials: true });
+  } catch (err) {
+    if (typeof onError === "function") onError(err);
+    return () => {};
+  }
+
+  es.addEventListener("connected", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onConnected === "function") onConnected(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.addEventListener("notification", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onNotification === "function") onNotification(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.addEventListener("unread_count", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onUnreadCount === "function") onUnreadCount(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.onerror = (err) => {
+    if (typeof onError === "function") onError(err);
+  };
+
+  return () => {
+    try {
+      es.close();
+    } catch {
+      // ignore close errors
+    }
+  };
+}
+
+export async function fetchCommunityAnnouncementsFromBackend(
+  idOrSlug,
+  { page = 1, limit = 20 } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/announcements?${params.toString()}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function createCommunityAnnouncementOnBackend(
+  idOrSlug,
+  payload,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/announcements`, {
+    method: "POST",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function fetchEventAnnouncementsFromBackend(
+  eventId,
+  { page = 1, limit = 20 } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await apiRequest(`/events/${encodeURIComponent(eventId)}/announcements?${params.toString()}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function createEventAnnouncementOnBackend(
+  eventId,
+  payload,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/events/${encodeURIComponent(eventId)}/announcements`, {
+    method: "POST",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}

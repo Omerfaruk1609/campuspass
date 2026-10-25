@@ -1,3 +1,6 @@
+import { createNotificationController } from "./controllers/notificationController.js";
+import { createNotificationRoutes } from "./routes/notificationRoutes.js";
+import { createNotificationService } from "./services/notificationService.js";
 import { createAuthController } from "./controllers/authController.js";
 import { createCertificateController } from "./controllers/certificateController.js";
 import { createCommunityController } from "./controllers/communityController.js";
@@ -66,9 +69,14 @@ export function buildCampusPassApp({
     expectedChainId: chainId,
   });
 
+  const notificationService = createNotificationService({
+    prisma,
+  });
+
   const eventService = createEventService({
     prisma,
     blockchainService,
+    notificationService,
   });
 
   const studentService = createStudentService({
@@ -81,6 +89,7 @@ export function buildCampusPassApp({
     prisma,
     blockchainService,
     confirmations: certificateConfirmations,
+    notificationService,
   });
 
   const organizerAnalyticsService = createOrganizerAnalyticsService({
@@ -91,6 +100,7 @@ export function buildCampusPassApp({
 
   const communityService = createCommunityService({
     prisma,
+    notificationService,
   });
 
   const healthController = createHealthController({
@@ -109,6 +119,9 @@ export function buildCampusPassApp({
   });
   const communityController = createCommunityController({
     communityService,
+  });
+  const notificationController = createNotificationController({
+    notificationService,
   });
 
   const { requireOrganizerSession, optionalAuthSession } = createAuthMiddleware({
@@ -176,6 +189,13 @@ export function buildCampusPassApp({
       optionalAuthSession,
     })
   );
+  app.use(
+    "/api/notifications",
+    createNotificationRoutes({
+      notificationController,
+      requireAuthSession: requireOrganizerSession,
+    })
+  );
 
   app.use(createErrorHandler());
 
@@ -190,6 +210,7 @@ export function buildCampusPassApp({
       certificateService,
       organizerAnalyticsService,
       communityService,
+      notificationService,
     },
   };
 }

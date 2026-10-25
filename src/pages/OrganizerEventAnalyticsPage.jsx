@@ -47,6 +47,11 @@ export default function OrganizerEventAnalyticsPage({
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [csvDownloading, setCsvDownloading] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(null);
+  const [eventAnnouncements, setEventAnnouncements] = useState([]);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
+  const [announcementBanner, setAnnouncementBanner] = useState(null);
 
   // SIWE state
   const [authenticating, setAuthenticating] = useState(false);
