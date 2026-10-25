@@ -1,5 +1,14 @@
+import { Link } from "react-router-dom";
+
 export default function CommunityCard({ community, onSelectCommunity }) {
   const logoInitial = community.name ? community.name.charAt(0).toUpperCase() : "T";
+  const slugOrId = community.slug || community.id;
+
+  const handleSelect = () => {
+    if (onSelectCommunity) {
+      onSelectCommunity(slugOrId);
+    }
+  };
 
   return (
     <article
@@ -14,11 +23,15 @@ export default function CommunityCard({ community, onSelectCommunity }) {
       }}
     >
       {/* Kapak / Banner Alanı */}
-      <div
+      <Link
+        to={`/communities/${slugOrId}`}
+        onClick={handleSelect}
         style={{
           height: "110px",
           width: "100%",
           position: "relative",
+          display: "block",
+          textDecoration: "none",
           background: community.coverImageUrl
             ? `url(${community.coverImageUrl}) center/cover no-repeat`
             : "linear-gradient(135deg, rgba(111, 136, 255, 0.3) 0%, rgba(208, 188, 255, 0.2) 50%, rgba(3, 18, 46, 0.95) 100%)",
@@ -44,7 +57,7 @@ export default function CommunityCard({ community, onSelectCommunity }) {
             {community.category || "Genel"}
           </span>
         </div>
-      </div>
+      </Link>
 
       {/* Gövde */}
       <div
@@ -110,18 +123,23 @@ export default function CommunityCard({ community, onSelectCommunity }) {
         </div>
 
         {/* Başlık */}
-        <h3
-          className="font-headline-sm"
-          onClick={() => onSelectCommunity(community.slug || community.id)}
-          style={{
-            margin: "0 0 0.35rem 0",
-            cursor: "pointer",
-            color: "var(--stitch-on-surface)",
-            lineHeight: 1.3,
-          }}
+        <Link
+          to={`/communities/${slugOrId}`}
+          onClick={handleSelect}
+          style={{ textDecoration: "none", color: "inherit" }}
         >
-          {community.name}
-        </h3>
+          <h3
+            className="font-headline-sm"
+            style={{
+              margin: "0 0 0.35rem 0",
+              cursor: "pointer",
+              color: "var(--stitch-on-surface)",
+              lineHeight: 1.3,
+            }}
+          >
+            {community.name}
+          </h3>
+        </Link>
 
         {/* Kısa Açıklama */}
         <p
@@ -172,14 +190,21 @@ export default function CommunityCard({ community, onSelectCommunity }) {
 
         {/* Aksiyon */}
         <div style={{ marginTop: "0.75rem" }}>
-          <button
-            type="button"
+          <Link
+            to={`/communities/${slugOrId}`}
             className="stitch-btn-secondary"
-            onClick={() => onSelectCommunity(community.slug || community.id)}
-            style={{ width: "100%", padding: "0.5rem", fontSize: "0.8125rem" }}
+            onClick={handleSelect}
+            style={{
+              width: "100%",
+              padding: "0.5rem",
+              fontSize: "0.8125rem",
+              textDecoration: "none",
+              display: "block",
+              textAlign: "center",
+            }}
           >
             Topluluk Sayfasını Gör →
-          </button>
+          </Link>
         </div>
       </div>
     </article>

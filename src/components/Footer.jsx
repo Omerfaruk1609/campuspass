@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
@@ -27,8 +28,9 @@ export default function Footer({ onSelectTab }) {
         >
           {/* Col 1: Brand & Academic Web3 Infrastructure */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
+            <Link
+              to="/"
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", textDecoration: "none" }}
               onClick={() => onSelectTab && onSelectTab("all")}
             >
               <div
@@ -50,7 +52,7 @@ export default function Footer({ onSelectTab }) {
               <span className="font-headline-md" style={{ color: "var(--stitch-on-surface)" }}>
                 Campus<span style={{ color: "var(--stitch-primary)" }}>Pass</span>
               </span>
-            </div>
+            </Link>
 
             <p className="font-body-sm" style={{ color: "var(--stitch-on-surface-variant)", lineHeight: 1.6 }}>
               Üniversite kulüpleri, kampüs etkinlikleri ve blokzincir tabanlı katılım ekosistemi.
@@ -78,50 +80,38 @@ export default function Footer({ onSelectTab }) {
               Hızlı Erişim
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              <a
-                href="#kesfet"
+              <Link
+                to="/events"
                 className="font-body-sm"
                 style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onSelectTab) onSelectTab("all");
-                }}
+                onClick={() => onSelectTab && onSelectTab("all")}
               >
                 Etkinlikleri Keşfet
-              </a>
-              <a
-                href="#ogrenci"
+              </Link>
+              <Link
+                to="/profile"
                 className="font-body-sm"
                 style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onSelectTab) onSelectTab("student");
-                }}
+                onClick={() => onSelectTab && onSelectTab("student")}
               >
                 Öğrenci Profilim
-              </a>
-              <a
-                href="#organizator"
+              </Link>
+              <Link
+                to="/organizer"
                 className="font-body-sm"
                 style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onSelectTab) onSelectTab("organizer");
-                }}
+                onClick={() => onSelectTab && onSelectTab("organizer")}
               >
                 Organizatör Paneli
-              </a>
-              <a
-                href="#sertifika"
+              </Link>
+              <Link
+                to="/verify"
                 className="font-body-sm"
                 style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onSelectTab) onSelectTab("verify");
-                }}
+                onClick={() => onSelectTab && onSelectTab("verify")}
               >
                 Sertifika Doğrula
-              </a>
+              </Link>
             </div>
           </div>
 
@@ -131,18 +121,34 @@ export default function Footer({ onSelectTab }) {
               Topluluklar
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface-variant)" }}>
+              <Link
+                to="/communities"
+                className="font-body-sm"
+                style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
+              >
                 İTÜ Blockchain Kulübü
-              </span>
-              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface-variant)" }}>
+              </Link>
+              <Link
+                to="/communities"
+                className="font-body-sm"
+                style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
+              >
                 ODTÜ Yapay Zeka Topluluğu
-              </span>
-              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface-variant)" }}>
+              </Link>
+              <Link
+                to="/communities"
+                className="font-body-sm"
+                style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
+              >
                 YTÜ Yazılım Geliştiricileri
-              </span>
-              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface-variant)" }}>
+              </Link>
+              <Link
+                to="/communities"
+                className="font-body-sm"
+                style={{ color: "var(--stitch-on-surface-variant)", textDecoration: "none" }}
+              >
                 Boğaziçi Tasarım &amp; İnovasyon
-              </span>
+              </Link>
             </div>
           </div>
 

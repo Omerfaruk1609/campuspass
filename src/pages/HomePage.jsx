@@ -1,3 +1,5 @@
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAppContext } from "../context/AppContext";
 import { useMemo, useState } from "react";
 import EventCard from "../components/EventCard";
 import { MONAD_CHAIN_ID } from "../data/events";
@@ -22,19 +24,25 @@ function getDefaultDates() {
   };
 }
 
-export default function HomePage({
-  events,
-  loadingEvents,
-  account,
-  chainId,
-  activeTab,
-  onSelectTab,
-  onSelectEvent,
-  onCreateEvent,
-  onRegisterEvent,
-  onRefreshEvents,
-  txState,
-}) {
+export default function HomePage(props) {
+  const context = useAppContext();
+
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const fallbackEvents = useMemo(() => [], []);
+  const events = props.events ?? context?.events ?? fallbackEvents;
+  const loadingEvents = props.loadingEvents ?? context?.loadingEvents ?? false;
+  const account = props.account ?? context?.account ?? null;
+  const chainId = props.chainId ?? context?.chainId ?? null;
+  const activeTab = props.activeTab ?? null;
+  const onSelectTab = props.onSelectTab ?? null;
+  const onSelectEvent = props.onSelectEvent ?? ((id) => navigate(`/events/${id}`));
+  const onCreateEvent = props.onCreateEvent ?? context?.handleCreateEvent;
+  const onRegisterEvent = props.onRegisterEvent ?? context?.handleRegisterEvent;
+  const onRefreshEvents = props.onRefreshEvents ?? context?.loadEvents;
+  const txState = props.txState ?? context?.txState ?? { busy: false, type: null, targetId: null };
+  const viewMode = props.viewMode;
   const defaults = useMemo(() => getDefaultDates(), []);
 
   // Gelişmiş Etkinlik Oluşturma Formu State
@@ -193,7 +201,7 @@ export default function HomePage({
     }
   }
 
-  const isLandingView = activeTab === "home";
+  const isLandingView = viewMode ? viewMode === "landing" : activeTab === "home" || location.pathname === "/";
 
   return (
     <div className="stitch-shell page-container" style={{ paddingBottom: "4rem" }}>
@@ -258,28 +266,28 @@ export default function HomePage({
                 </p>
 
                 <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
-                  <button
-                    type="button"
+                  <Link
+                    to="/events"
                     className="stitch-btn-primary"
-                    onClick={() => onSelectTab("all")}
-                    style={{ padding: "0.875rem 1.75rem", fontSize: "1rem" }}
+                    onClick={() => onSelectTab && onSelectTab("all")}
+                    style={{ padding: "0.875rem 1.75rem", fontSize: "1rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
                   >
                     <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
                       explore
                     </span>
                     Etkinlikleri Keşfet
-                  </button>
-                  <button
-                    type="button"
+                  </Link>
+                  <Link
+                    to="/organizer"
                     className="stitch-btn-secondary"
-                    onClick={() => onSelectTab("organizer")}
-                    style={{ padding: "0.875rem 1.75rem", fontSize: "1rem" }}
+                    onClick={() => onSelectTab && onSelectTab("organizer")}
+                    style={{ padding: "0.875rem 1.75rem", fontSize: "1rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
                   >
                     <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
                       hub
                     </span>
                     Topluluk Paneli
-                  </button>
+                  </Link>
                 </div>
 
                 {/* Hızlı Sayaçlar */}
@@ -562,13 +570,14 @@ export default function HomePage({
                     Kampüste Neler Oluyor?
                   </h2>
                 </div>
-                <button
-                  type="button"
+                <Link
+                  to="/events"
                   className="stitch-btn-secondary"
-                  onClick={() => onSelectTab("all")}
+                  style={{ textDecoration: "none" }}
+                  onClick={() => onSelectTab && onSelectTab("all")}
                 >
                   Tüm Etkinlikleri Keşfet ({events.length}) →
-                </button>
+                </Link>
               </div>
 
               {featuredEvents.length === 0 ? (
@@ -625,7 +634,8 @@ export default function HomePage({
                       }}
                       onClick={() => {
                         setSelectedCommunity(commName);
-                        onSelectTab("all");
+                        if (onSelectTab) onSelectTab("all");
+                        navigate("/events");
                       }}
                     >
                       <div

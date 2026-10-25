@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import {
@@ -22,6 +23,31 @@ export default function OrganizerDashboardPage({
   onCreateEventClick,
   isConnecting,
 }) {
+  const navigate = useNavigate();
+
+  const handleSelectAnalytics = (id) => {
+    if (onSelectEventAnalytics) {
+      onSelectEventAnalytics(id);
+    } else if (navigate) {
+      navigate(`/organizer/events/${id}`);
+    }
+  };
+
+  const handleSelectEvent = (id) => {
+    if (onSelectEvent) {
+      onSelectEvent(id);
+    } else if (navigate) {
+      navigate(`/events/${id}`);
+    }
+  };
+
+  const handleCreate = () => {
+    if (onCreateEventClick) {
+      onCreateEventClick();
+    } else if (navigate) {
+      navigate("/events");
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
@@ -270,7 +296,7 @@ export default function OrganizerDashboardPage({
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                onClick={onCreateEventClick}
+                onClick={handleCreate}
               >
                 + Yeni Etkinlik Oluştur
               </button>
@@ -467,7 +493,7 @@ export default function OrganizerDashboardPage({
                         </span>{" "}
                         <strong
                           style={{ cursor: "pointer", color: "var(--color-primary-light)" }}
-                          onClick={() => onSelectEventAnalytics(ev.id)}
+                          onClick={() => handleSelectAnalytics(ev.id)}
                         >
                           {ev.title}
                         </strong>
@@ -531,7 +557,7 @@ export default function OrganizerDashboardPage({
                         type="button"
                         className="btn btn-primary btn-sm"
                         style={{ marginRight: "0.4rem" }}
-                        onClick={() => onSelectEventAnalytics(ev.id)}
+                        onClick={() => handleSelectAnalytics(ev.id)}
                       >
                         Detay Analitiği
                       </button>
@@ -549,7 +575,7 @@ export default function OrganizerDashboardPage({
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          onClick={() => onSelectEvent(ev.id)}
+                          onClick={() => handleSelectEvent(ev.id)}
                           title="Etkinlik Genel Sayfası"
                         >
                           ↗

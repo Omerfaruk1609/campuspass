@@ -324,6 +324,35 @@ export async function ensureOrganizerSiweSession({
 /**
  * Öğrenci sertifika oluşturma / listeleme işlemleri için SIWE oturumunu başlatır veya doğrular.
  */
+
+/**
+ * Sunucuda mevcut geçerli bir SIWE oturumu olup olmadığını sorgular (Sayfa yenilendiğinde oturumu geri yükler).
+ */
+export async function checkServerSession({ customFetch = null } = {}) {
+  try {
+    const sessionCheck = await apiRequest("/auth/session", {
+      method: "GET",
+      customFetch,
+    });
+    if (
+      sessionCheck.data?.authenticated &&
+      sessionCheck.data?.walletAddress &&
+      sessionCheck.data?.csrfToken
+    ) {
+      activeAuthState = {
+        authenticated: true,
+        walletAddress: ethers.getAddress(sessionCheck.data.walletAddress),
+        csrfToken: sessionCheck.data.csrfToken,
+        expiresAt: sessionCheck.data.expiresAt,
+      };
+      return activeAuthState;
+    }
+  } catch {
+    // Oturum yok veya sunucuya erişilemiyor
+  }
+  return { authenticated: false, walletAddress: null, csrfToken: null };
+}
+
 export async function ensureStudentSiweSession({
   signer,
   walletAddress,

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import CommunityCard from "../components/CommunityCard";
 import {
@@ -21,6 +22,8 @@ export default function CommunityDiscoveryPage({
   onSelectCommunity,
   onConnectWallet,
 }) {
+  const navigate = useNavigate();
+  const handleSelectCommunity = onSelectCommunity || ((slug) => (navigate ? navigate(`/communities/${slug}`) : null));
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -331,7 +334,7 @@ export default function CommunityDiscoveryPage({
               <CommunityCard
                 key={comm.id}
                 community={comm}
-                onSelectCommunity={onSelectCommunity}
+                onSelectCommunity={handleSelectCommunity}
               />
             ))}
           </div>

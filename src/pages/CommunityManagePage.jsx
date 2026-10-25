@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
   approveCommunityApplicationOnBackend,
@@ -16,11 +17,17 @@ import {
 import { shortenAddress } from "../data/events";
 
 export default function CommunityManagePage({
-  slug,
+  slug: propSlug,
   account,
   onBack,
   onOpenEvent,
 }) {
+  const params = useParams();
+  const navigate = useNavigate();
+
+  const slug = propSlug ?? params.slug;
+  const handleBack = onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
+  const handleOpenEvent = onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -235,7 +242,7 @@ export default function CommunityManagePage({
     return (
       <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
         <div className="stitch-container">
-          <button type="button" className="stitch-btn-secondary" onClick={onBack}>
+          <button type="button" className="stitch-btn-secondary" onClick={handleBack}>
             ← Geri Dön
           </button>
           <div className="stitch-card" style={{ padding: "3rem", textAlign: "center", marginTop: "2rem", color: "var(--stitch-error)" }}>
@@ -264,7 +271,7 @@ export default function CommunityManagePage({
       <div className="stitch-container" style={{ position: "relative", zIndex: 1, paddingTop: "1.5rem" }}>
         {/* Üst Gezinme & Başlık */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
-          <button type="button" className="stitch-btn-secondary" onClick={onBack} style={{ fontSize: "0.875rem" }}>
+          <button type="button" className="stitch-btn-secondary" onClick={handleBack} style={{ fontSize: "0.875rem" }}>
             ← Topluluk Sayfasına Dön
           </button>
 
@@ -637,7 +644,7 @@ export default function CommunityManagePage({
                         <button
                           type="button"
                           className="stitch-btn-secondary"
-                          onClick={() => onOpenEvent && onOpenEvent(ev.id)}
+                          onClick={() => handleOpenEvent(ev.id)}
                           style={{ fontSize: "0.75rem", padding: "0.35rem 0.65rem" }}
                         >
                           Detay
