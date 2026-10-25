@@ -237,20 +237,50 @@ export async function fetchStudentProfileFromBackend(
   };
 }
 
+// Sekmeler arası oturum senkronizasyonu için anahtar ve yayınlayıcı
+export const AUTH_STORAGE_EVENT_KEY = "campuspass_auth_event";
+
+export function broadcastAuthEvent(type, payload = {}) {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem(
+        AUTH_STORAGE_EVENT_KEY,
+        JSON.stringify({ type, timestamp: Date.now(), ...payload })
+      );
+    } catch {
+      // localStorage erişim kısıtlaması göz ardı edilir
+    }
+  }
+}
+
 /**
- * Organizatör cüzdanı için SIWE (EIP-4361) oturumu açık değilse
- * nonce alır, cüzdanda mesajı imzalatır ve HttpOnly oturum çerezini + CSRF token'ı başlatır.
+ * Cüzdan için SIWE (EIP-4361) oturumunu doğrular veya başlatır.
+ * Hem obje parametrelerini ({ signer, walletAddress, chainId }) hem de doğrudan string cüzdan adresini destekler.
  */
-export async function ensureOrganizerSiweSession({
-  signer,
-  walletAddress,
-  chainId = MONAD_CHAIN_ID,
-  statement = "CampusPass organizator yonetim oturumu icin cuzdaninizi dogrulayin.",
-  customFetch = null,
-}) {
+export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
+  let walletAddress = null;
+  let signer = maybeSigner || null;
+  let chainId = MONAD_CHAIN_ID;
+  let statement = "CampusPass islemleri icin cuzdaninizi dogrulayin.";
+  let customFetch = null;
+
+  if (typeof optionsOrAddress === "string") {
+    walletAddress = optionsOrAddress;
+  } else if (optionsOrAddress && typeof optionsOrAddress === "object") {
+    walletAddress = optionsOrAddress.walletAddress || optionsOrAddress.account;
+    signer = optionsOrAddress.signer || signer;
+    chainId = optionsOrAddress.chainId || chainId;
+    statement = optionsOrAddress.statement || statement;
+    customFetch = optionsOrAddress.customFetch || customFetch;
+  }
+
+  if (!walletAddress) {
+    throw new Error("SIWE kimlik doğrulaması için cüzdan adresi gereklidir.");
+  }
+
   const checksumWallet = ethers.getAddress(walletAddress);
 
-  // Mevcut oturum aynı cüzdana aitse ve geçerliyse yeniden imza isteme
+  // 1. İstemci önbelleğinde geçerli aktif oturum var mı?
   if (
     activeAuthState.authenticated &&
     activeAuthState.walletAddress &&
@@ -260,6 +290,7 @@ export async function ensureOrganizerSiweSession({
     return activeAuthState;
   }
 
+  // 2. Sunucuda mevcut çerez geçerli mi? (Yeniden imza istememek için önce sunucu çerezini dene)
   try {
     const sessionCheck = await apiRequest("/auth/session", {
       method: "GET",
@@ -267,8 +298,7 @@ export async function ensureOrganizerSiweSession({
     });
     if (
       sessionCheck.data?.authenticated &&
-      sessionCheck.data?.walletAddress?.toLowerCase() ===
-        checksumWallet.toLowerCase() &&
+      sessionCheck.data?.walletAddress?.toLowerCase() === checksumWallet.toLowerCase() &&
       sessionCheck.data?.csrfToken
     ) {
       activeAuthState = {
@@ -283,14 +313,27 @@ export async function ensureOrganizerSiweSession({
     // Oturum kontrolü başarısızsa yeni SIWE akışı başlat
   }
 
-  // 1. Sunucudan tek kullanımlık nonce al
+  // 3. İmzacı temini: Eğer signer sağlanmadıysa tarayıcı MetaMask sağlayıcısından al
+  let effectiveSigner = signer;
+  if (!effectiveSigner && typeof window !== "undefined" && window.ethereum) {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    effectiveSigner = await provider.getSigner();
+  }
+
+  if (!effectiveSigner) {
+    throw new Error(
+      "SIWE oturumu açmak için cüzdan imzası gereklidir. Lütfen cüzdanınızı bağlayın."
+    );
+  }
+
+  // 4. Sunucudan tek kullanımlık nonce al
   const nonceRes = await apiRequest(
     `/auth/nonce?walletAddress=${encodeURIComponent(checksumWallet)}`,
     { method: "GET", customFetch }
   );
   const { nonce, domain, uri, issuedAt, expiresAt } = nonceRes.data;
 
-  // 2. SIWE (EIP-4361) mesajını oluştur ve cüzdanda imzalat
+  // 5. SIWE (EIP-4361) mesajını oluştur ve cüzdanda imzalat
   const siweMessage = buildClientSiweMessage({
     domain,
     address: checksumWallet,
@@ -302,9 +345,9 @@ export async function ensureOrganizerSiweSession({
     expirationTime: expiresAt,
   });
 
-  const signature = await signer.signMessage(siweMessage);
+  const signature = await effectiveSigner.signMessage(siweMessage);
 
-  // 3. Sunucuda doğrulat, nonce'u atomik tüket ve oturum oluştur
+  // 6. Sunucuda doğrulat, nonce'u atomik tüket ve oturum oluştur
   const verifyRes = await apiRequest("/auth/verify", {
     method: "POST",
     body: { message: siweMessage, signature },
@@ -321,9 +364,8 @@ export async function ensureOrganizerSiweSession({
   return activeAuthState;
 }
 
-/**
- * Öğrenci sertifika oluşturma / listeleme işlemleri için SIWE oturumunu başlatır veya doğrular.
- */
+export const ensureOrganizerSiweSession = ensureSiweSession;
+export const ensureStudentSiweSession = ensureSiweSession;
 
 /**
  * Sunucuda mevcut geçerli bir SIWE oturumu olup olmadığını sorgular (Sayfa yenilendiğinde oturumu geri yükler).
@@ -351,22 +393,6 @@ export async function checkServerSession({ customFetch = null } = {}) {
     // Oturum yok veya sunucuya erişilemiyor
   }
   return { authenticated: false, walletAddress: null, csrfToken: null };
-}
-
-export async function ensureStudentSiweSession({
-  signer,
-  walletAddress,
-  chainId = MONAD_CHAIN_ID,
-  customFetch = null,
-}) {
-  return ensureOrganizerSiweSession({
-    signer,
-    walletAddress,
-    chainId,
-    statement:
-      "CampusPass ogrenci sertifika islemleri icin cuzdaninizi dogrulayin.",
-    customFetch,
-  });
 }
 
 export async function issueCertificateOnBackend({
@@ -556,7 +582,10 @@ export async function logoutOrganizerSiweSession({ customFetch = null } = {}) {
     // Sunucu erişilemezse bile yerel durumu temizle
   }
   clearActiveAuthState();
+  broadcastAuthEvent("LOGOUT");
 }
+
+export const logoutSession = logoutOrganizerSiweSession;
 
 export async function saveMetadataToBackend({
   eventId,
@@ -683,279 +712,215 @@ export async function fetchCommunitiesFromBackend({
   params.append("page", String(page));
   params.append("limit", String(limit));
 
-  const res = await fetch(`${API_BASE_URL}/communities?${params.toString()}`, {
+  const res = await apiRequest(`/communities?${params.toString()}`, {
     method: "GET",
-    headers: { Accept: "application/json" },
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchCommunityProfileFromBackend(idOrSlug) {
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}`, {
+export async function fetchCommunityProfileFromBackend(idOrSlug, { customFetch = null } = {}) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}`, {
     method: "GET",
-    headers: { credentials: "include", Accept: "application/json" },
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchCommunityEventsFromBackend(idOrSlug, { page = 1, limit = 20 } = {}) {
+export async function fetchCommunityEventsFromBackend(
+  idOrSlug,
+  { page = 1, limit = 20, customFetch = null } = {}
+) {
   const params = new URLSearchParams();
   params.append("page", String(page));
   params.append("limit", String(limit));
 
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events?${params.toString()}`,
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/events?${params.toString()}`,
     {
       method: "GET",
-      headers: { Accept: "application/json" },
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function createCommunityOnBackend(payload) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities`, {
+export async function createCommunityOnBackend(payload, { customFetch = null } = {}) {
+  const res = await apiRequest("/communities", {
     method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify(payload),
+    body: payload,
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function joinCommunityOnBackend(idOrSlug) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/join`, {
+export async function joinCommunityOnBackend(idOrSlug, { customFetch = null } = {}) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/join`, {
     method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({}),
+    body: {},
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function leaveCommunityOnBackend(idOrSlug) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/leave`, {
+export async function leaveCommunityOnBackend(idOrSlug, { customFetch = null } = {}) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/leave`, {
     method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({}),
+    body: {},
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchMyCommunitiesFromBackend() {
-  const res = await fetch(`${API_BASE_URL}/communities/me`, {
+export async function fetchMyCommunitiesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/communities/me", {
     method: "GET",
-    headers: { Accept: "application/json" },
-    credentials: "include",
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchCommunityMembersFromBackend(idOrSlug, { status = "ACTIVE", search = "", page = 1, limit = 50 } = {}) {
+export async function fetchCommunityMembersFromBackend(
+  idOrSlug,
+  { status = "ACTIVE", search = "", page = 1, limit = 50, customFetch = null } = {}
+) {
   const params = new URLSearchParams();
   if (status) params.append("status", status);
   if (search) params.append("search", search);
   params.append("page", String(page));
   params.append("limit", String(limit));
 
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members?${params.toString()}`,
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/members?${params.toString()}`,
     {
       method: "GET",
-      headers: { Accept: "application/json" },
-      credentials: "include",
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchCommunityApplicationsFromBackend(idOrSlug, { page = 1, limit = 50 } = {}) {
+export async function fetchCommunityApplicationsFromBackend(
+  idOrSlug,
+  { page = 1, limit = 50, customFetch = null } = {}
+) {
   const params = new URLSearchParams();
   params.append("page", String(page));
   params.append("limit", String(limit));
 
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications?${params.toString()}`,
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/applications?${params.toString()}`,
     {
       method: "GET",
-      headers: { Accept: "application/json" },
-      credentials: "include",
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function approveCommunityApplicationOnBackend(idOrSlug, memberId) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/approve`,
+export async function approveCommunityApplicationOnBackend(
+  idOrSlug,
+  memberId,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/approve`,
     {
       method: "POST",
-      headers,
-      credentials: "include",
-      body: JSON.stringify({}),
+      body: {},
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function rejectCommunityApplicationOnBackend(idOrSlug, memberId) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/reject`,
+export async function rejectCommunityApplicationOnBackend(
+  idOrSlug,
+  memberId,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/applications/${encodeURIComponent(memberId)}/reject`,
     {
       method: "POST",
-      headers,
-      credentials: "include",
-      body: JSON.stringify({}),
+      body: {},
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function removeCommunityMemberOnBackend(idOrSlug, memberId) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}`,
+export async function removeCommunityMemberOnBackend(
+  idOrSlug,
+  memberId,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}`,
     {
       method: "DELETE",
-      headers,
-      credentials: "include",
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function updateCommunityMemberRoleOnBackend(idOrSlug, memberId, role) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(
-    `${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}/role`,
+export async function updateCommunityMemberRoleOnBackend(
+  idOrSlug,
+  memberId,
+  role,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/members/${encodeURIComponent(memberId)}/role`,
     {
       method: "PATCH",
-      headers,
-      credentials: "include",
-      body: JSON.stringify({ role }),
+      body: { role },
+      customFetch,
     }
   );
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function updateCommunityOnBackend(idOrSlug, payload) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}`, {
+export async function updateCommunityOnBackend(idOrSlug, payload, { customFetch = null } = {}) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}`, {
     method: "PATCH",
-    headers,
-    credentials: "include",
-    body: JSON.stringify(payload),
+    body: payload,
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function linkEventToCommunityOnBackend(idOrSlug, { eventId, chainId, contractAddress }) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events/link`, {
+export async function linkEventToCommunityOnBackend(
+  idOrSlug,
+  { eventId, chainId, contractAddress },
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/events/link`, {
     method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({ eventId, chainId, contractAddress }),
+    body: { eventId, chainId, contractAddress },
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function unlinkEventFromCommunityOnBackend(idOrSlug, { eventId, chainId, contractAddress }) {
-  const headers = { "Content-Type": "application/json" };
-  if (activeAuthState.csrfToken) {
-    headers["X-CSRF-Token"] = activeAuthState.csrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/events/unlink`, {
+export async function unlinkEventFromCommunityOnBackend(
+  idOrSlug,
+  { eventId, chainId, contractAddress },
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/events/unlink`, {
     method: "DELETE",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({ eventId, chainId, contractAddress }),
+    body: { eventId, chainId, contractAddress },
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }
 
-export async function fetchCommunityAnalyticsFromBackend(idOrSlug) {
-  const res = await fetch(`${API_BASE_URL}/communities/${encodeURIComponent(idOrSlug)}/analytics`, {
+export async function fetchCommunityAnalyticsFromBackend(idOrSlug, { customFetch = null } = {}) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/analytics`, {
     method: "GET",
-    headers: { Accept: "application/json" },
-    credentials: "include",
+    customFetch,
   });
-  const data = await res.json();
-  validateApiResponseEnvelope(data);
-  return data.data;
+  return res.data;
 }

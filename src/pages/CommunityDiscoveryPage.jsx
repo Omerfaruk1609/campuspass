@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import CommunityCard from "../components/CommunityCard";
 import {
   createCommunityOnBackend,
+  ensureSiweSession,
   fetchCommunitiesFromBackend,
 } from "../utils/apiClient";
 
@@ -93,6 +94,11 @@ export default function CommunityDiscoveryPage({
 
     setCreateBusy(true);
     try {
+      await ensureSiweSession({
+        walletAddress: account,
+        statement: "CampusPass yeni topluluk olusturma islemi icin cuzdaninizi dogrulayin.",
+      });
+
       const created = await createCommunityOnBackend({
         name: createName.trim(),
         universityName: createUniversity.trim(),

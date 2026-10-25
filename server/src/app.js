@@ -111,7 +111,9 @@ export function buildCampusPassApp({
     communityService,
   });
 
-  const { requireOrganizerSession } = createAuthMiddleware({ authService });
+  const { requireOrganizerSession, optionalAuthSession } = createAuthMiddleware({
+    authService,
+  });
 
   const globalRateLimiter = createRateLimiter({
     maxRequests: rateLimitMax,
@@ -164,6 +166,7 @@ export function buildCampusPassApp({
     createCommunityRoutes({
       communityController,
       requireAuthSession: requireOrganizerSession,
+      optionalAuthSession,
     })
   );
 

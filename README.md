@@ -1,12 +1,12 @@
-# CampusPass — Blokzincir Tabanlı Etkinlik Kayıt, Katılım Doğrulama ve İndeksleme Platformu
+# CampusPass — Monad Testnet Blokzincir Tabanlı Üniversite Etkinlik, Topluluk ve Katılım Platformu
 
-**CampusPass**, üniversite topluluklarının düzenlediği etkinlikler için **Monad Testnet** üzerinde çalışan, cüzdan tabanlı kayıt (`registerForEvent`), kriptografik imzalı QR katılım doğrulama (`markAttendance`), **SIWE (EIP-4361)** organizatör yetkilendirmesi, **PostgreSQL + Prisma ORM** kalıcı veri katmanı ve **Blockchain Event Indexer** mimarisine sahip çok kullanıcılı bir Web3 platformudur.
+**CampusPass**, üniversite öğrenci topluluklarının ve etkinlik organizatörlerinin etkinlik oluşturma, biletleme, cüzdan tabanlı kayıt (`registerForEvent`), dinamik EIP-191 imzalı QR katılım doğrulama (`markAttendance`), **SIWE (Sign-In with Ethereum / EIP-4361)** kimlik doğrulama, rol tabanlı topluluk yönetimi (RBAC), **PostgreSQL + Prisma ORM** kalıcı veri katmanı, **Blockchain Event Indexer** ve **React Router DOM v7** mimarisine sahip tam yığın Web3 platformudur.
 
 ---
 
 ## 1. Canlı Monad Testnet Dağıtım Bilgileri
 
-| Bilgi | Değer |
+| Parametre | Değer |
 |---|---|
 | **Ağ (Network)** | Monad Testnet |
 | **Chain ID** | `10143` (`0x279f`) |
@@ -20,112 +20,136 @@
 
 ## 2. Teknoloji Yığını ve Mimari
 
-* **Frontend:** React 19 + Vite 8 (ESM)
-* **Backend API:** Node.js + Express Uyumlu HTTP Katmanı + Zod Doğrulaması
-* **Veritabanı & ORM:** PostgreSQL + Prisma ORM (`server/prisma/schema.prisma`)
-* **Kimlik Doğrulama:** SIWE (Sign-In with Ethereum / EIP-4361) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token`
-* **Blokzincir Etkileşimi & Indexer:** Ethers.js v6 (Salt-okunur RPC provider ile `EventCreated`, `UserRegistered`, `AttendanceMarked` indeksleme ve reorg koruması)
-* **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` doğrulamalı, `CP-CERT-V1` SHA-256 + HMAC bütünlük mühürlü, yatay A4 PDF indirilebilir ve cüzdan bağlantısı gerektirmeden `/verify/:certificateId` üzerinden doğrulanabilir sertifika sistemi
-* **Organizatör Yönetim Paneli & Analitik (Faz 11):** Üniversite topluluklarının etkinliklerini, dönüşüm ve katılım oranlarını, tekil öğrenci erişimlerini yönetebildiği KPI kartları, trend grafikleri, sayfalanmış katılımcı tablosu, formula injection korumalı CSV dışa aktarımı ve anlık indexer senkronizasyon göstergesi
-* **Üniversite Topluluk Yönetim Sistemi (Faz 12):** Üniversite kulüp ve topluluklarının oluşturulması, profilleri, rol tabanlı yetkilendirme (OWNER, ADMIN, MEMBER), üyelik başvuru ve onay döngüsü, tek kurucu ayrılma koruması, güvenli etkinlik-topluluk ilişkilendirmesi (anti-hijacking) ve topluluk analitiği
-* **Akıllı Sözleşme & Test:** Solidity `0.8.34` + Hardhat 3 + Mocha/Chai (103 kapsamlı Mocha testi + 6 gerçek PostgreSQL entegrasyon testi)
+* **Ön Yüz (Frontend):** React 19 + Vite 8 (ESM) + Google Stitch Cosmic Navy Tasarım Sistemi
+* **Yönlendirme (Routing):** React Router DOM v7 (Bildirimsel Rota Ağacı, Route Guards, Deep Linking, 404 Sayfası)
+* **Backend API:** Node.js + Express Uyumlu HTTP Katmanı + Zod Giriş Validasyonu
+* **Veritabanı & ORM:** PostgreSQL 16 + Prisma ORM 6 (`server/prisma/schema.prisma`)
+* **Kimlik Doğrulama:** EIP-4361 (SIWE) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token` + Sekmeler Arası Eşitleme (`campuspass_auth_event`)
+* **Blokzincir Entegrasyonu:** Ethers.js v6 + Salt-Okunur RPC ve İmzacı Sağlayıcı
+* **Event Indexer:** Blokzincir olaylarını (`EventCreated`, `UserRegistered`, `AttendanceMarked`) aralıksız tarayan ve reorg korumalı checkpoint tablosunda saklayan indeksleyici servis
+* **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` kanıtlı, `CP-CERT-V1` SHA-256 + HMAC-SHA256 bütünlük mühürlü, yatay A4 PDF indirilebilir ve `/verify/:certificateId` üzerinden kamuya açık doğrulanabilir sertifika motoru
+* **Organizatör Analitiği (Faz 11):** Dönüşüm hunisi, doluluk oranları, tekil erişim, zaman serisi grafikleri ve formula injection korumalı CSV ihracı
+* **Üniversite Topluluk Yönetimi (Faz 12):** Kulüp profilleri, rol tabanlı yetkilendirme (`OWNER`, `ADMIN`, `MEMBER`), üyelik onay döngüsü, güvenli etkinlik-topluluk bağlama
+* **Güvenlik ve Entegrasyon Stabilizasyonu (Faz 13):** Çoklu kiracılık korumalı etkinlik bağlantı yönetimi, isteğe bağlı oturum çözme (`optionalAuthSession`), cüzdan ayırma (disconnect) ile SIWE logout ayrımı, merkezi oturum menüsü
 
 ```text
 campuspass/
 ├── contracts/                  # CampusPass.sol akıllı sözleşmesi
 ├── src/                        # React 19 + Vite frontend uygulaması
-│   ├── components/             # Navbar, EventCard
-│   ├── pages/                  # HomePage, EventPage, StudentProfile
-│   ├── utils/                  # apiClient, eventMetadata, qrVerification, qrMatrix, studentProfile
-│   └── data/                   # Monad Testnet ABI ve dağıtım adresleri
-├── server/                     # Faz 9 Backend API, Prisma & Event Indexer
+│   ├── components/             # Navbar, Footer, EventCard, CommunityCard, ScrollToTop
+│   │   └── guards/             # ProtectedRoute, OrganizerGuard, CommunityManageGuard
+│   ├── context/                # AppContext (Merkezi durum, cüzdan, oturum ve işlemler)
+│   ├── layouts/                # RootLayout (Paylaşılan kabuk düzeni ve Outlet)
+│   ├── pages/                  # HomePage, EventPage, CommunityDiscovery, CommunityProfile,
+│   │                           # CommunityManage, StudentProfile, OrganizerDashboard,
+│   │                           # OrganizerEventAnalytics, CertificateVerification, NotFound
+│   ├── routes/                 # AppRoutes (Merkezi bildirimsel rota yapılandırması)
+│   ├── utils/                  # apiClient, eventMetadata, qrVerification, certificatePdf
+│   └── data/                   # Monad Testnet ABI, sabitler ve deployment bilgisi
+├── server/                     # Backend API, Prisma & Event Indexer
 │   ├── prisma/
-│   │   ├── schema.prisma       # PostgreSQL veri modeli
-│   │   └── migrations/         # PostgreSQL SQL migration dosyaları
+│   │   ├── schema.prisma       # 9 doğrulanmış PostgreSQL veri modeli
+│   │   └── migrations/         # SQL migration geçmişi
 │   ├── src/
-│   │   ├── app.js              # API uygulama fabrikası ve middleware zinciri
+│   │   ├── app.js              # Bağımlılık enjeksiyonlu API fabrika fonksiyonu
 │   │   ├── index.js            # Sunucu giriş noktası
-│   │   ├── routes/             # health, auth, events, students rotaları
-│   │   ├── controllers/        # İstek/yanıt denetleyicileri
-│   │   ├── services/           # prismaClient, blockchainService, authService, eventService, studentService
-│   │   ├── middleware/         # CORS, CSRF, SIWE oturum, Rate Limiter, Error Handler
-│   │   ├── indexer/            # Monad Testnet Event Indexer (eventIndexer.js, runIndexer.js)
-│   │   └── utils/              # Zod şemaları, ortam doğrulama, hassas log maskeleme
-│   ├── tests/                  # Gerçek PostgreSQL bağlantı ve entegrasyon testi
-│   ├── .env.example            # Backend örnek ortam değişkenleri
-│   └── package.json
-├── test/                       # 61 Mocha testi (Sözleşme, QR, Metadata, Profil, Backend & Indexer)
-├── .env.example                # Frontend örnek ortam değişkenleri
+│   │   ├── routes/             # health, auth, events, students, certificates, organizer, communities
+│   │   ├── controllers/        # İstek denetleyicileri
+│   │   ├── services/           # authService, blockchainService, certificateService, communityService, eventService
+│   │   ├── middleware/         # authMiddleware (require & optional), security, rateLimiter, errorHandler
+│   │   └── indexer/            # eventIndexer.js ve runIndexer.js
+│   ├── tests/                  # PostgreSQL entegrasyon testi
+│   └── .env.example
+├── test/                       # 126 Mocha/Chai regresyon testi
 └── README.md
 ```
 
 ---
 
-## 3. PostgreSQL Kurulumu ve Prisma Migration
+## 3. Ön Yüz Rota Haritası (Application Route Map)
 
-### 3.1. PostgreSQL Veritabanı Başlatma (Docker veya Yerel Kurulum)
-**Seçenek A — Docker ile Hızlı Başlatma (Önerilen):**
+Tüm rotalar `src/routes/AppRoutes.jsx` dosyasında bildirimsel olarak tanımlanmıştır:
+
+| URL Yolu | Sayfa Bileşeni | Erişim Muhafızı (Guard) | Açıklama |
+|---|---|---|---|
+| `/` | `HomePage` (`viewMode="landing"`) | Herkese Açık | Açılış sayfası, Bento Grid ve vitrin etkinlikleri |
+| `/events` | `HomePage` (`viewMode="discovery"`) | Herkese Açık | Kapsamlı etkinlik keşif ve filtreleme arayüzü |
+| `/events/:eventId` | `EventPage` | Herkese Açık | Parametrik etkinlik detay, kayıt ve imzalı QR bileti |
+| `/communities` | `CommunityDiscoveryPage` | Herkese Açık | Üniversite topluluklarını keşfetme ve oluşturma |
+| `/communities/:slug` | `CommunityProfilePage` | İsteğe Bağlı Oturum | Topluluk profili, üyelik butonları ve etkinlikleri |
+| `/communities/:slug/manage` | `CommunityManagePage` | `CommunityManageGuard` (`OWNER`/`ADMIN`) | Topluluk yönetim paneli (Roller, başvurular, etkinlik bağlama) |
+| `/profile` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci etkinlik kayıtları, rozetler ve geçmiş |
+| `/profile/certificates` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Kazanılan blokzincir dijital katılım sertifikaları |
+| `/organizer` | `OrganizerDashboardPage` | `OrganizerGuard` (Cüzdan Zorunlu) | Organizatör panosu, QR okutma ve katılım işaretleme |
+| `/organizer/events/:eventId` | `OrganizerEventAnalyticsPage` | `OrganizerGuard` (Sahiplik Zorunlu) | Belirli bir etkinliğe ait katılım hunisi ve zaman serisi |
+| `/verify` | `CertificateVerificationPage` | Herkese Açık | Sertifika doğrulama arama ekranı |
+| `/verify/:certificateId` | `CertificateVerificationPage` | Herkese Açık | Doğrudan QR / derin bağlantı ile 4 katmanlı sertifika doğrulama |
+| `*` | `NotFoundPage` | Herkese Açık | Tanımsız yollar için Stitch temalı 404 sayfası |
+
+---
+
+## 4. PostgreSQL Kurulumu ve Prisma Migration
+
+### 4.1. Veritabanı Başlatma (Docker veya Yerel Kurulum)
 ```bash
-# Docker Desktop açıkken geliştirme ve test veritabanı konteynerini başlatın:
+# Docker Desktop ile PostgreSQL 16 başlatma:
 docker run --name campuspass-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=campuspass -p 5432:5432 -d postgres:16-alpine
 
-# Testler için ayrı bir veritabanı oluşturun (mevcut verileri korur):
+# Test veritabanını oluşturma:
 docker exec -it campuspass-pg psql -U postgres -c "CREATE DATABASE campuspass_test;"
 ```
 
-**Seçenek B — Yerel PostgreSQL 15+ Servisi:**
-```sql
-CREATE DATABASE campuspass;
-CREATE DATABASE campuspass_test;
-```
-
-### 3.2. Ortam Değişkenlerini Yapılandırma
-Örnek ortam dosyalarını kopyalayın (gerçek `.env` dosyaları `.gitignore` ile korunur ve Git'e eklenmez):
+### 4.2. Ortam Değişkenleri (.env)
+Örnek ortam dosyalarını kopyalayın:
 ```bash
 cp .env.example .env
 cp server/.env.example server/.env
 ```
 
-`server/.env` içindeki temel değişkenler:
-* `DATABASE_URL`: `postgresql://postgres:postgres@localhost:5432/campuspass?schema=public`
-* `TEST_DATABASE_URL`: `postgresql://postgres:postgres@localhost:5432/campuspass_test?schema=public`
-* `MONAD_CHAIN_ID`: `10143`
-* `MONAD_RPC_URL`: `https://testnet-rpc.monad.xyz`
-* `CONTRACT_ADDRESS`: `0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da`
-* `SESSION_SECRET`: En az 32 karakterlik kriptografik gizli anahtar
-* `CORS_ALLOWED_ORIGINS`: `http://localhost:5173,http://127.0.0.1:5173`
+`server/.env` temel konfigürasyonu:
+```env
+PORT=3001
+NODE_ENV=development
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/campuspass?schema=public"
+TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/campuspass_test?schema=public"
+MONAD_CHAIN_ID=10143
+MONAD_RPC_URL="https://testnet-rpc.monad.xyz"
+CONTRACT_ADDRESS="0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da"
+SESSION_SECRET="kriptografik-en-az-32-karakter-uzunlugunda-guvenli-oturum-anahtari"
+CORS_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
+SIWE_DOMAIN="localhost:5173"
+SIWE_URI="http://localhost:5173"
+```
 
-> **Güvenlik Notu:** Veritabanı bağlantı bilgileri (`DATABASE_URL`) ve oturum sırları yalnızca `server/.env` içinde bulunur; frontend paketine (`VITE_*`) asla eklenmez. `NODE_ENV=production` ortamında sahte/in-memory veritabanı geri dönüşü (`fallback`) ve varsayılan `SESSION_SECRET` kullanımı kesin olarak engellenmiştir.
-
-### 3.3. Prisma Paket Kurulumu, Şema Doğrulama ve Migration
+### 4.3. Prisma Paketleri, Doğrulama ve Migration
 ```bash
-# Backend Prisma bağımlılıklarını yükleyin
+# Backend bağımlılıklarını kurun
 cd server && npm install && cd ..
 
-# Prisma şema yapısını, benzersiz indeksleri ve SQL migration dosyalarını doğrula
+# Prisma şemasını ve modelleri (9 model) doğrula
 npm run db:validate
 
-# Prisma Client üret ve PostgreSQL tablolarını oluştur (PostgreSQL çalışırken)
+# Prisma Client üret ve veritabanı tablolarını senkronize et
 npm run db:generate
 npm run db:migrate
 ```
 
 ---
 
-## 4. Yerel Geliştirme Akışı (Başlatma Komutları)
+## 5. Yerel Geliştirme Akışı
 
 ### 1. Backend API Sunucusunu Başlatma
 ```bash
 npm run dev:server
 ```
-Sunucu varsayılan olarak `http://localhost:3001` adresinde çalışır (`GET http://localhost:3001/api/health`).
+API `http://localhost:3001` adresinde ayağa kalkar. Sağlık kontrolü: `GET http://localhost:3001/api/health`.
 
 ### 2. Blockchain Event Indexer'ı Başlatma
 ```bash
-# Sürekli dinleme modunda başlatma
+# Sürekli dinleme modu
 npm run dev:indexer
 
-# Tek seferlik senkronizasyon turu çalıştırma
+# Tek seferlik blok tarama ve checkpoint güncelleme
 node server/src/indexer/runIndexer.js --once
 ```
 
@@ -133,105 +157,72 @@ node server/src/indexer/runIndexer.js --once
 ```bash
 npm run dev
 ```
-Tarayıcıda `http://localhost:5173` adresini açın.
-
-### Backend Çevrimdışı Olduğunda (Yedek Mod) Davranışı
-Backend sunucusu kapalıyken uygulama çökmez ve veri kaybı yaşanmaz:
-* **Çalışmaya Devam Eden Özellikler:** Monad Testnet üzerinden etkinlik listeleme, yeni etkinlik oluşturma (`createEvent`), etkinliğe kaydolma (`registerForEvent`), imzalı QR üretme ve 5 aşamalı doğrulama (`markAttendance`), öğrenci profili zincir üstü sorgulama ve yerel `localStorage` metadata önbelleği.
-* **Kurtarma ve Senkronizasyon:** Zincir üstü etkinlik oluşturulduğunda Backend API kapalıysa metadata yerel kuyrukta saklanır; API tekrar açıldığında üst bildirim çubuğundaki **"↻ API'ye Senkronize Et (SIWE)"** butonuyla tek tıkla sunucuya aktarılır.
+Uygulamayı tarayıcınızda `http://localhost:5173` adresinden açabilirsiniz.
 
 ---
 
-## 5. REST API Endpoint Özeti
+## 6. Kimlik Doğrulama (SIWE) ve Oturum Yaşam Döngüsü
 
-### Herkese Açık Endpoint'ler
-* `GET /api/health` — Servis, veritabanı, sözleşme ve indexer son blok (`lastProcessedBlock`) durumu.
-* `GET /api/events` — Sayfalama (`page`, `limit`), filtreleme (`search`, `category`, `community`, `status`, `organizer`) ve sıralama (`sortBy`: `NEWEST`, `DATE_ASC`, `DATE_DESC`, `FILL_DESC`) destekli etkinlik listesi.
-* `GET /api/events/:eventId` — Zincir üstü etkinlik + PostgreSQL metadata + indekslenmiş katılım sayısı.
-* `GET /api/events/:eventId/metadata` — Etkinliğe ait zincir dışı metadata kaydı.
-* `GET /api/students/:walletAddress/events` — Öğrencinin kayıtlı olduğu etkinlikler ve istatistikleri *(yalnızca herkese açık blokzincir verilerini döndürür)*.
-* `GET /api/students/:walletAddress/attendance` — Öğrencinin doğrulanmış katılımları ve gerçek `txHash` içeren zaman çizelgesi *(yalnızca herkese açık blokzincir verilerini döndürür)*.
-
-### Kimlik Doğrulama (SIWE / EIP-4361) Endpoint'leri
-* `GET /api/auth/nonce` — Tek kullanımlık kriptografik giriş nonce'u üretir.
-* `POST /api/auth/verify` — SIWE mesajını ve imzayı doğrular, nonce'u atomik tüketir, `HttpOnly` oturum çerezi ve `csrfToken` üretir.
-* `GET /api/auth/session` — Aktif oturum durumunu döndürür.
-* `POST /api/auth/logout` — Oturumu sonlandırır ve çerezi temizler.
-
-### Organizatör Yetkisi Gerektiren Endpoint'ler (`HttpOnly Cookie` + `X-CSRF-Token` + Canlı Zincir Üstü `organizer` Kontrolü)
-* `POST /api/events/:eventId/metadata` — İlk metadata kaydı oluşturma veya yerel veriyi taşıma.
-* `PATCH /api/events/:eventId/metadata` — Mevcut etkinlik metadata'sını güncelleme.
-* `POST /api/events/:eventId/cancel` — Etkinliği organizatör yetkisiyle iptal etme.
-* `POST /api/events/:eventId/reactivate` — İptal edilmiş etkinliği yeniden aktifleştirme.
-
-### Dijital Katılım Sertifikası (Faz 10) Endpoint'leri
-* `POST /api/certificates` — Giriş yapmış (SIWE + CSRF) ve blokzincir üzerinde katılımı (`AttendanceMarked`) doğrulanmış öğrenci için idempotent dijital katılım sertifikası oluşturur (`201 Created` veya mükerrer istekte `200 OK`).
-* `GET /api/certificates/me` — Giriş yapmış öğrencinin kendi sertifikalarını listeler.
-* `GET /api/certificates/wallet/:walletAddress` — Öğrencinin herkese açık sertifikalarını (`displayName` hariç) listeler.
-* `GET /api/certificates/:certificateId` — Sertifika detaylarını (`displayName` hariç) döndürür (Cüzdan bağlantısı gerektirmez).
-* `GET /api/certificates/:certificateId/verify` — Sertifikayı 4 katmanda (PostgreSQL kaydı, `CP-CERT-V1` kriptografik bütünlük mührü, `IndexedAttendance` log kanıtı ve canlı Monad Testnet `CampusPass.sol` sözleşmesi) doğrular (`VERIFIED`, `NOT_FOUND`, `INVALID`, `UNVERIFIABLE_NOW`).
-
-### Organizatör Yönetim Paneli ve Analitik (Faz 11) Endpoint'leri
-* `GET /api/organizer/dashboard` — Giriş yapmış organizatörün (SIWE oturumu zorunlu) toplu KPI metriklerini, genel katılım oranını, tekil katılımcı sayısını ve etkinlik listesini döner.
-* `GET /api/organizer/events` — Organizatörün düzenlediği etkinliklerin güncel durum ve katılım özetlerini listeler.
-* `GET /api/organizer/events/:eventId/analytics` — Belirli bir etkinliğe ait detaylı dönüşüm oranlarını (doluluk, katılım, sertifika dönüşümü, vazgeçme/drop-off) döner (Canlı blokzincir organizatör kontrolü ile korunur).
-* `GET /api/organizer/events/:eventId/participants` — Etkinliğe kayıtlı öğrencilerin sayfalanmış ve filtrelenebilir (`ALL`, `ATTENDED`, `REGISTERED_ONLY`, `CERTIFIED`, `search`) durum tablosunu döner.
-* `GET /api/organizer/events/:eventId/export` — Etkinlik katılımcı listesini veya etkinlik özetini CSV formatında indirir. Spreadsheet Formula Injection saldırılarına karşı güvenli kaçış mekanizması içerir (`=`, `+`, `-`, `@` ön ekleri güvenli formatlanır).
-* `GET /api/organizer/timeseries` — Organizatörün etkinlikleri arasındaki kayıt ve katılım sayılarını karşılaştırmalı zaman serisi grafiği için döner.
-
-### Üniversite Topluluk Yönetim Sistemi (Faz 12) Endpoint'leri
-* `GET /api/communities` — Aktif toplulukları sayfalanmış, kategori ve arama filtreleriyle listeler (Herkese açık).
-* `GET /api/communities/:idOrSlug` — Topluluk detay profili, üye sayısı, etkinlik sayısı ve çağıran cüzdanın rolünü döner (Herkese açık).
-* `GET /api/communities/:idOrSlug/events` — Toplulukla ilişkilendirilmiş güncel ve geçmiş etkinlikleri listeler (Herkese açık).
-* `GET /api/communities/me` — Oturum açmış öğrencinin üye olduğu ve başvuru yaptığı toplulukları döner (SIWE oturumu zorunlu).
-* `POST /api/communities` — Yeni üniversite topluluğu oluşturur; oluşturan cüzdan otomatik `OWNER` atanır (SIWE oturumu zorunlu).
-* `POST /api/communities/:idOrSlug/join` — Topluluğa katılım başvurusu yapar (`PENDING` durumu, SIWE oturumu zorunlu).
-* `POST /api/communities/:idOrSlug/leave` — Topluluktan ayrılır; topluluğun tek kurucusu/sahibi (`OWNER`) topluluğu sahipsiz bırakarak ayrılamaz.
-* `PATCH /api/communities/:idOrSlug` — Topluluk bilgilerini günceller (`OWNER` veya `ADMIN` yetkisi gerektirir).
-* `GET /api/communities/:idOrSlug/members` — Topluluk üyelerini listeler (`OWNER` veya `ADMIN` yetkisi gerektirir).
-* `GET /api/communities/:idOrSlug/applications` — Onay bekleyen üyelik başvurularını listeler (`OWNER` veya `ADMIN` yetkisi gerektirir).
-* `POST /api/communities/:idOrSlug/applications/:memberId/approve` — Üyelik başvurusunu onaylar (`ACTIVE` yapar).
-* `POST /api/communities/:idOrSlug/applications/:memberId/reject` — Üyelik başvurusunu reddeder (`REJECTED` yapar).
-* `PATCH /api/communities/:idOrSlug/members/:memberId/role` — Üyenin rolünü değiştirir (`OWNER` yetkisi gerektirir; `ADMIN` veya `MEMBER` atanabilir).
-* `DELETE /api/communities/:idOrSlug/members/:memberId` — Üyeyi topluluktan çıkarır (`ADMIN`, `OWNER`'ı veya başka bir `ADMIN`'i çıkaramaz).
-* `POST /api/communities/:idOrSlug/events/link` — Etkinliği toplulukla ilişkilendirir (Anti-Hijacking: Çağıran kişi topluluk yöneticisi ve etkinliğin zincir üstü organizatörü olmalıdır).
-* `DELETE /api/communities/:idOrSlug/events/unlink` — Etkinlik ile topluluk arasındaki ilişkiyi kaldırır.
-* `GET /api/communities/:idOrSlug/analytics` — Topluluğun etkinlik katılım, doluluk ve üye performans analitiğini döner (`OWNER` veya `ADMIN` yetkisi gerektirir).
+1. **Nonce Talebi:** Ön yüz, `GET /api/auth/nonce?walletAddress=0x...` çağrısı yaparak 128-bit kriptografik rastgele tek kullanımlık bir nonce edinir.
+2. **Mesaj İmzası:** EIP-4361 standart metni derlenir ve kullanıcının cüzdanına (MetaMask vb.) kişisel imza (`personal_sign` / EIP-191) için sunulur. Özel anahtar istemciden asla ayrılmaz.
+3. **Doğrulama ve Oturum Açma:** `POST /api/auth/verify` mesajı ve imzayı doğrular, nonce'u atomik tüketir (`NONCE_REPLAY_DETECTED` koruması), veritabanında oturum kaydı oluşturur, `HttpOnly; SameSite=Lax` güvenlikli çerez ve durum değiştiren işlemler için `csrfToken` döndürür.
+4. **Oturum Restorasyonu (Hydration):** Sayfa yenilendiğinde `AppContext`, `checkServerSession()` ile `/api/auth/session` uç noktasını sorgular; geçerli oturum varsa kullanıcıyı tekrar imza atmaya zorlamadan ayrıcalıklarını geri yükler.
+5. **Cüzdan Ayırma vs. SIWE Logout:**
+   - **Cüzdanı Ayır (Disconnect):** Yalnızca tarayıcıdaki cüzdan bağlantı durumunu sıfırlar.
+   - **SIWE Oturumunu Kapat (Logout):** Sunucuda `POST /api/auth/logout` çağrılır, veritabanında `revokedAt` işaretlenir, HttpOnly çerez temizlenir ve `campuspass_auth_event` üzerinden açık olan tüm sekmelerde oturum kapatma anında senkronize edilir.
 
 ---
 
-## 6. Test ve Doğrulama Komutları
+## 7. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha testlerini çalıştır (92 mevcut + 11 Faz 12 Topluluk Yönetim testi = 103 test)
+# Tüm Mocha ve Solidity testlerini çalıştır (126 test)
 npm test
 
-# Yalnızca Faz 12 Topluluk Yönetim Sistemi testlerini çalıştır
-npx hardhat test test/CommunityManagementPhase12.js
+# Yalnızca Faz 13 Stabilizasyon testlerini çalıştır
+npx hardhat test test/Phase13Stabilization.js --no-compile
 
-# Yalnızca Faz 9 Backend, SIWE ve Indexer testlerini çalıştır
+# Yalnızca Faz 12.5 React Router testlerini çalıştır
+npx hardhat test test/ReactRouterPhase12_5.js --no-compile
+
+# Yalnızca Faz 12 Topluluk Yönetimi testlerini çalıştır
+npx hardhat test test/CommunityManagementPhase12.js --no-compile
+
+# Yalnızca Faz 9 Backend ve Indexer testlerini çalıştır
 npm run test:backend
 
 # Prisma şema doğrulaması
 npm run db:validate
-npm --prefix server run db:validate
 
-# Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü (Mock testlerden ayrı, 6 entegrasyon testi)
+# Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü
 npm run test:postgres
 
-# Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü (Mock testlerden ayrı)
-npm run test:postgres
-
-# Kod kalitesi (Oxlint) ve üretim derlemesi (Vite build)
+# Oxlint statik kod analizi (0 hata)
 npm run lint
+
+# Üretim derlemesi (Vite build)
 npm run build
 ```
 
 ---
 
-## 7. Üretim Ortamı (Production) Güvenlik Gereksinimleri
+## 8. Üretim Dağıtım (Production Deployment) Gereksinimleri
 
-1. **HTTPS Zorunluluğu:** API internete açıldığında TLS/HTTPS (Reverse Proxy: Nginx / Cloudflare) zorunlu olmalıdır. `NODE_ENV=production` olduğunda oturum çerezlerine `Secure` bayrağı otomatik eklenir.
-2. **CORS ve CSRF:** `CORS_ALLOWED_ORIGINS` yalnızca gerçek üretim alan adına ayarlanmalı, durum değiştiren tüm isteklerde `X-CSRF-Token` doğrulaması korunmalıdır.
-3. **Veritabanı Güvenliği:** PostgreSQL bağlantısı özel ağda (VPC) tutulmalı, en az yetki ilkesine sahip bir veritabanı kullanıcısı ve SSL (`?sslmode=require`) kullanılmalıdır.
-4. **Blokzincir Doğruluk Kaynağı:** İndekslenmiş veritabanı kayıtları ile blokzincir arasında gecikme veya çelişki oluştuğunda her zaman canlı Monad Testnet sözleşmesi (`0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da`) temel doğruluk kaynağı olarak kabul edilir.
+> **Önemli:** Uygulama henüz üretime dağıtılmamıştır. Canlıya alma aşamasında aşağıdaki gereksinimler uygulanmalıdır:
+
+1. **TLS / HTTPS:** Üretim ortamında tüm trafik HTTPS üzerinden sunulmalıdır. `NODE_ENV=production` aktif olduğunda oturum çerezi otomatik olarak `Secure: true` bayrağı kazanır.
+2. **SPA URL Rewrite (Fallback):** React Router alt rotalarının (`/events/1`, `/communities/slug`, `/verify/CERT-1`) doğrudan sayfa yenilemelerinde veya derin bağlantılarda 404 vermemesi için web sunucusunda `index.html` fallback kuralı tanımlanmalıdır:
+   - **Nginx:** `location / { try_files $uri $uri/ /index.html; }`
+   - **Vercel / Netlify:** Rewrite kuralı `/* -> /index.html 200`
+3. **CORS Allowlist:** `CORS_ALLOWED_ORIGINS` ortam değişkeni yalnızca uygulamanın resmi alan adı ile sınırlandırılmalıdır.
+4. **PostgreSQL İzolasyonu:** Veritabanı yalnızca API sunucusunun erişebileceği özel ağda (VPC) barındırılmalı, SSL (`sslmode=require`) ile bağlanılmalıdır.
+5. **Indexer Daemon:** `runIndexer.js` süreci Systemd, PM2 veya bir Docker konteyneri içinde sürekli çalışan bir arka plan servisi olarak yapılandırılmalıdır.
+
+---
+
+## 9. Sorun Giderme (Troubleshooting)
+
+* **MetaMask Yanlış Ağ Uyarısı:** Sağ üstteki "Ağı Değiştir (10143)" butonuna tıklayarak cüzdanınızın Monad Testnet'e geçmesini sağlayın. Otomatik eklenemezse Chain ID: `10143`, RPC: `https://testnet-rpc.monad.xyz`, Sembol: `MON` bilgilerini manuel girin.
+* **Topluluk Yönetim Paneline Girişte 403 Hatası:** Yalnızca topluluğun `OWNER` veya `ADMIN` rolüne sahip üyeleri `/communities/:slug/manage` rotasına erişebilir. Topluluk profilinden rolünüzü kontrol edin.
+* **PostgreSQL "EACCES / Connection Refused" Hatası:** PostgreSQL servisinin çalıştığından ve `server/.env` içindeki `DATABASE_URL` port/şifre bilgilerinin doğru olduğundan emin olun.
+* **Windows Git EPERM / Lock Hatası:** Windows ortamında terminal kilitlenmelerini önlemek için komutların yönetici izinleriyle veya ilgili klasör kilitleri temizlenerek çalıştırılması önerilir.

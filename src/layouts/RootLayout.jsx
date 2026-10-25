@@ -16,6 +16,9 @@ export default function RootLayout() {
     handleSyncPendingMetadataToApi,
     banner,
     setBanner,
+    sessionState,
+    handleLogout,
+    handleDisconnectWallet,
     handleConnectWallet,
     handleSwitchNetwork,
   } = useAppContext();
@@ -27,6 +30,9 @@ export default function RootLayout() {
       <Navbar
         account={account}
         chainId={chainId}
+        sessionState={sessionState}
+        onLogout={handleLogout}
+        onDisconnectWallet={handleDisconnectWallet}
         onConnectWallet={handleConnectWallet}
         onSwitchNetwork={handleSwitchNetwork}
         isConnecting={isConnecting}

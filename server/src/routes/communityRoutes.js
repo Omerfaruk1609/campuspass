@@ -1,6 +1,10 @@
 import { createRouter } from "../utils/expressAdapter.js";
 
-export function createCommunityRoutes({ communityController, requireAuthSession }) {
+export function createCommunityRoutes({
+  communityController,
+  requireAuthSession,
+  optionalAuthSession = (_req, _res, next) => next(),
+}) {
   const router = createRouter();
 
   // Public Keşif & Listeleme
@@ -13,8 +17,8 @@ export function createCommunityRoutes({ communityController, requireAuthSession 
   router.post("/", requireAuthSession, communityController.createCommunity);
 
   // Public Topluluk Profili & Etkinlikleri
-  router.get("/:idOrSlug", communityController.getCommunityProfile);
-  router.get("/:idOrSlug/events", communityController.getCommunityEvents);
+  router.get("/:idOrSlug", optionalAuthSession, communityController.getCommunityProfile);
+  router.get("/:idOrSlug/events", optionalAuthSession, communityController.getCommunityEvents);
 
   // Üyelik İşlemleri (Katılma & Ayrılma)
   router.post("/:idOrSlug/join", requireAuthSession, communityController.joinCommunity);

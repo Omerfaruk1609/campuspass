@@ -385,9 +385,9 @@ describe("Faz 12.5 — React Router Mimarisi, URL Tabanlı Navigasyon ve Güvenl
     it("9.1 Cüzdan değiştiğinde activeAuthState sıfırlanmalı ve önceki oturum sızdırılmamalı", function () {
       clearActiveAuthState();
       const state = getActiveAuthState();
-      expect(state.authenticated).to.be.false;
-      expect(state.walletAddress).to.be.null;
-      expect(state.csrfToken).to.be.null;
+      expect(state.authenticated).to.equal(false);
+      expect(state.walletAddress).to.equal(null);
+      expect(state.csrfToken).to.equal(null);
     });
   });
 });

@@ -19,6 +19,7 @@ import {
   validateEventMetadataInput,
 } from "../utils/eventMetadata";
 import {
+  AUTH_STORAGE_EVENT_KEY,
   addPendingMetadataSync,
   cancelEventOnBackend,
   checkServerSession,
@@ -338,6 +339,73 @@ export function AppProvider({
       }
     };
   }, [account, loadEvents]);
+
+  // Sekmeler arası oturum kapatma senkronizasyonunu dinle
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleStorageChange = (e) => {
+      if (e.key === AUTH_STORAGE_EVENT_KEY) {
+        try {
+          const payload = JSON.parse(e.newValue || "{}");
+          if (payload.type === "LOGOUT") {
+            clearActiveAuthState();
+            setSessionState({
+              authenticated: false,
+              walletAddress: null,
+              csrfToken: null,
+              loading: false,
+            });
+          }
+        } catch {
+          // JSON ayrıştırma hatası göz ardı edilir
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
+  // Sunucu SIWE oturumunu güvenle sonlandır
+  const handleLogout = useCallback(async () => {
+    try {
+      await logoutOrganizerSiweSession();
+    } catch {
+      // Hata durumunda bile istemci durumunu sıfırla
+    }
+    clearActiveAuthState();
+    setSessionState({
+      authenticated: false,
+      walletAddress: null,
+      csrfToken: null,
+      loading: false,
+    });
+    setBanner({
+      type: "info",
+      message: "CampusPass SIWE oturumunuz başarıyla kapatıldı.",
+    });
+  }, []);
+
+  // Cüzdan bağlantısını istemci tarafında kes
+  const handleDisconnectWallet = useCallback(() => {
+    setAccount(null);
+    clearActiveAuthState();
+    logoutOrganizerSiweSession().catch(() => {});
+    setSessionState({
+      authenticated: false,
+      walletAddress: null,
+      csrfToken: null,
+      loading: false,
+    });
+    setBanner({
+      type: "info",
+      message: "Cüzdan bağlantısı kesildi.",
+    });
+    loadEvents(null);
+  }, [loadEvents]);
 
   async function handleConnectWallet() {
     setBanner(null);
@@ -869,6 +937,8 @@ export function AppProvider({
     banner,
     setBanner,
     handleConnectWallet,
+    handleDisconnectWallet,
+    handleLogout,
     handleSwitchNetwork,
     handleCreateEvent,
     handleUpdateEventMetadata,

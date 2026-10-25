@@ -56,7 +56,23 @@ export function createAuthMiddleware({ authService }) {
     next();
   }
 
+  async function optionalAuthSession(req, res, next) {
+    const rawSessionToken = req.cookies?.[SESSION_COOKIE_NAME];
+    if (rawSessionToken) {
+      try {
+        const session = await authService.verifySession(rawSessionToken);
+        if (session) {
+          req.session = session;
+        }
+      } catch {
+        // İsteğe bağlı oturum; hata fırlatılmaz
+      }
+    }
+    next();
+  }
+
   return {
     requireOrganizerSession,
+    optionalAuthSession,
   };
 }

@@ -133,7 +133,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
     });
 
     expect(res.status).to.equal(401);
-    expect(res.body.success).to.be.false;
+    expect(res.body.success).to.equal(false);
   });
 
   it("2. Geçersiz girdi ile topluluk oluşturma reddedilmeli (400 Bad Request)", async function () {
@@ -205,7 +205,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
     });
 
     expect(res.status).to.equal(201);
-    expect(res.body.success).to.be.true;
+    expect(res.body.success).to.equal(true);
     expect(res.body.data.slug).to.equal("monad-blockchain-kulubu");
     expect(res.body.data.name).to.equal("Monad Blockchain Kulübü");
     expect(res.body.data.myRole).to.equal("OWNER");
@@ -370,7 +370,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
       },
     });
     expect(leaveRes.status).to.equal(200);
-    expect(leaveRes.body.success).to.be.true;
+    expect(leaveRes.body.success).to.equal(true);
 
     // Ayrıldıktan sonra aktif üye listesinde olmamalı
     const membersRes = await app.inject({
@@ -383,7 +383,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
     const foundMember = membersRes.body.data.items.find(
       (m) => m.walletAddress.toLowerCase() === memberSigner1.address.toLowerCase()
     );
-    expect(foundMember).to.be.undefined;
+    expect(foundMember).to.equal(undefined);
   });
 
   it("7. Başvuru reddetme: Durum REJECTED olmalı", async function () {
@@ -656,7 +656,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
       },
     });
     expect(linkRes.status).to.equal(200);
-    expect(linkRes.body.success).to.be.true;
+    expect(linkRes.body.success).to.equal(true);
 
     // 2. Kurucu, başkasına ait Etkinlik #2'yi bağlamaya çalışırsa 403 Forbidden almalı (Anti-Hijacking)
     const hijackRes = await app.inject({
@@ -699,7 +699,7 @@ describe("Faz 12 — Üniversite Topluluk Yönetim Sistemi, Rol Tabanlı Yetkile
       },
     });
     expect(unlinkRes.status).to.equal(200);
-    expect(unlinkRes.body.success).to.be.true;
+    expect(unlinkRes.body.success).to.equal(true);
   });
 
   // =========================================================================

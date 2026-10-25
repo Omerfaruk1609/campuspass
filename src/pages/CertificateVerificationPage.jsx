@@ -125,16 +125,11 @@ export default function CertificateVerificationPage({
 
   useEffect(() => {
     const normalized = String(effectiveId || "").trim().toUpperCase();
-    setInputCertId(normalized);
-    setActiveCertId(normalized);
-    async function initVerification() {
-      if (normalized) {
-        await runVerification(normalized);
-      } else {
-        setVerificationResult(null);
-      }
+    if (normalized) {
+      runVerification(normalized);
+    } else {
+      setVerificationResult(null);
     }
-    initVerification();
   }, [effectiveId, runVerification]);
 
   const handleSubmit = (e) => {

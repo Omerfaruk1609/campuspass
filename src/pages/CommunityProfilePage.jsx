@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import EventCard from "../components/EventCard";
 import {
+  ensureSiweSession,
   fetchCommunityEventsFromBackend,
   fetchCommunityProfileFromBackend,
   joinCommunityOnBackend,
@@ -65,6 +66,10 @@ export default function CommunityProfilePage({
     setActionBusy(true);
     setActionBanner(null);
     try {
+      await ensureSiweSession({
+        walletAddress: account,
+        statement: "CampusPass topluluk uyelik basvurusu icin cuzdaninizi dogrulayin.",
+      });
       await joinCommunityOnBackend(slug);
       setActionBanner({ type: "success", message: "Topluluk üyelik başvurunuz alındı!" });
       await loadData();
@@ -82,6 +87,10 @@ export default function CommunityProfilePage({
     setActionBusy(true);
     setActionBanner(null);
     try {
+      await ensureSiweSession({
+        walletAddress: account,
+        statement: "CampusPass topluluk ayrilma islemi icin cuzdaninizi dogrulayin.",
+      });
       await leaveCommunityOnBackend(slug);
       setActionBanner({ type: "info", message: "Topluluk üyeliğinden ayrıldınız." });
       await loadData();

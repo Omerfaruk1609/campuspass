@@ -112,15 +112,23 @@ export default function StudentProfile({
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [loading, setLoading] = useState(() => Boolean(account));
   const [rpcError, setRpcError] = useState(null);
-  const [activeProfileTab, setActiveProfileTab] = useState(initialTab);
+  const [internalTab, setInternalTab] = useState(initialTab);
 
-  useEffect(() => {
-    if (location?.pathname === "/profile/certificates") {
-      setActiveProfileTab("certs");
-    } else if (location?.pathname === "/profile") {
-      setActiveProfileTab((prev) => (prev === "certs" ? "events" : prev));
+  const activeProfileTab =
+    location?.pathname === "/profile/certificates"
+      ? "certs"
+      : location?.pathname === "/profile" && internalTab === "certs"
+        ? "events"
+        : internalTab;
+
+  const setActiveProfileTab = useCallback((tab) => {
+    setInternalTab(tab);
+    if (tab === "certs" && location?.pathname !== "/profile/certificates") {
+      navigate("/profile/certificates");
+    } else if (tab !== "certs" && location?.pathname === "/profile/certificates") {
+      navigate("/profile");
     }
-  }, [location?.pathname]); // events | certs | timeline | communities
+  }, [location?.pathname, navigate]);
   const [sectionFilter, setSectionFilter] = useState("all"); // all | upcoming | attended | past
   const [timelineDirection, setTimelineDirection] = useState("DESC");
 

@@ -835,10 +835,18 @@ export function createCommunityService({ prisma }) {
       throw ApiError.notFound("Etkinlik bulunamadı.", "EVENT_NOT_FOUND");
     }
 
+    if (event.communityId !== community.id) {
+      throw ApiError.badRequest(
+        "Bu etkinlik belirtilen topluluğa bağlı değil.",
+        "EVENT_COMMUNITY_MISMATCH"
+      );
+    }
+
     const updated = await prisma.eventMetadata.update({
       where: { id: event.id },
       data: {
         communityId: null,
+        community: "Genel",
         updatedAt: new Date(),
       },
     });
