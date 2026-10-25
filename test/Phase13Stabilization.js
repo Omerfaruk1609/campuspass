@@ -9,7 +9,6 @@ import {
   broadcastAuthEvent,
   clearActiveAuthState,
   ensureSiweSession,
-  getActiveAuthState,
 } from "../src/utils/apiClient.js";
 
 const { ethers } = await network.create();

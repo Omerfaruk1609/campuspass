@@ -924,3 +924,20 @@ export async function fetchCommunityAnalyticsFromBackend(idOrSlug, { customFetch
   });
   return res.data;
 }
+
+export async function fetchStudentAccountProfileFromBackend(walletAddress, { customFetch = null } = {}) {
+  const res = await apiRequest(`/students/${encodeURIComponent(walletAddress)}/profile`, {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function updateStudentProfileOnBackend(payload, { customFetch = null } = {}) {
+  const res = await apiRequest("/students/profile", {
+    method: "PATCH",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}

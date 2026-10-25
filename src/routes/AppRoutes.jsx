@@ -1,19 +1,23 @@
+import { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import RootLayout from "../layouts/RootLayout";
-import HomePage from "../pages/HomePage";
-import EventPage from "../pages/EventPage";
-import StudentProfile from "../pages/StudentProfile";
-import OrganizerDashboardPage from "../pages/OrganizerDashboardPage";
-import OrganizerEventAnalyticsPage from "../pages/OrganizerEventAnalyticsPage";
-import CommunityDiscoveryPage from "../pages/CommunityDiscoveryPage";
-import CommunityProfilePage from "../pages/CommunityProfilePage";
-import CommunityManagePage from "../pages/CommunityManagePage";
-import CertificateVerificationPage from "../pages/CertificateVerificationPage";
-import NotFoundPage from "../pages/NotFoundPage";
 
 import ProtectedRoute from "../components/guards/ProtectedRoute";
 import OrganizerGuard from "../components/guards/OrganizerGuard";
 import CommunityManageGuard from "../components/guards/CommunityManageGuard";
+
+// Route-level code splitting with React.lazy
+const HomePage = lazy(() => import("../pages/HomePage"));
+const EventPage = lazy(() => import("../pages/EventPage"));
+const StudentProfile = lazy(() => import("../pages/StudentProfile"));
+const OrganizerDashboardPage = lazy(() => import("../pages/OrganizerDashboardPage"));
+const OrganizerEventAnalyticsPage = lazy(() => import("../pages/OrganizerEventAnalyticsPage"));
+const CommunityDiscoveryPage = lazy(() => import("../pages/CommunityDiscoveryPage"));
+const CommunityProfilePage = lazy(() => import("../pages/CommunityProfilePage"));
+const CommunityManagePage = lazy(() => import("../pages/CommunityManagePage"));
+const CertificateVerificationPage = lazy(() => import("../pages/CertificateVerificationPage"));
+const AccountSettingsPage = lazy(() => import("../pages/AccountSettingsPage"));
+const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 export default function AppRoutes() {
   return (
@@ -60,6 +64,16 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <StudentProfile defaultTab="certs" />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Account & Session Settings (Hesap ve Oturum Ayarları) */}
+        <Route
+          path="settings"
+          element={
+            <ProtectedRoute>
+              <AccountSettingsPage />
             </ProtectedRoute>
           }
         />

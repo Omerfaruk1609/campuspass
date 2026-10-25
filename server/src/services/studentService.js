@@ -10,6 +10,7 @@ import { validateAndNormalizeAddress } from "../utils/validation.js";
  * - Yalnızca herkese açık blokzincir verilerini ve etkinlik metadata'sını döndürür.
  * - İndekslenmiş veritabanı kayıtları ile canlı blokzincir durumu arasında çelişki olursa
  *   blokzinciri temel doğruluk kaynağı (Source of Truth) kabul eder.
+ * - Faz 14: Öğrenci profil detayları (biyografi, bölüm, üniversite, avatar, gizlilik ayarları) yönetimi.
  */
 export function createStudentService({
   prisma,
@@ -17,6 +18,118 @@ export function createStudentService({
   eventService,
 }) {
   const { chainId, contractAddressNormalized } = blockchainService;
+
+  async function getStudentProfile(rawWalletAddress, { callerWalletAddress } = {}) {
+    const { checksumAddress, normalizedAddress } = validateAndNormalizeAddress(
+      rawWalletAddress,
+      "Öğrenci cüzdan adresi"
+    );
+
+    const isOwner = Boolean(
+      callerWalletAddress &&
+      callerWalletAddress.toLowerCase() === normalizedAddress
+    );
+
+    const profile = await prisma.studentProfile.findUnique({
+      where: { walletAddress: normalizedAddress },
+    });
+
+    if (!profile) {
+      return {
+        walletAddress: checksumAddress,
+        displayName: null,
+        university: "Monad Üniversitesi",
+        department: null,
+        bio: null,
+        avatarUrl: null,
+        isPublic: true,
+        isOwner,
+        exists: false,
+      };
+    }
+
+    if (!profile.isPublic && !isOwner) {
+      return {
+        walletAddress: checksumAddress,
+        displayName: null,
+        university: "Monad Üniversitesi",
+        department: null,
+        bio: null,
+        avatarUrl: null,
+        isPublic: false,
+        isOwner: false,
+        isPrivate: true,
+        exists: true,
+      };
+    }
+
+    return {
+      walletAddress: checksumAddress,
+      displayName: profile.displayName,
+      university: profile.university,
+      department: profile.department,
+      bio: profile.bio,
+      avatarUrl: profile.avatarUrl,
+      isPublic: profile.isPublic,
+      isOwner,
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+      exists: true,
+    };
+  }
+
+  async function upsertStudentProfile(rawWalletAddress, profileData) {
+    const { checksumAddress, normalizedAddress } = validateAndNormalizeAddress(
+      rawWalletAddress,
+      "Öğrenci cüzdan adresi"
+    );
+
+    const updateData = {};
+    if (profileData.displayName !== undefined) {
+      updateData.displayName = profileData.displayName ? profileData.displayName.trim() : null;
+    }
+    if (profileData.university !== undefined) {
+      updateData.university = profileData.university ? profileData.university.trim() : "Monad Üniversitesi";
+    }
+    if (profileData.department !== undefined) {
+      updateData.department = profileData.department ? profileData.department.trim() : null;
+    }
+    if (profileData.bio !== undefined) {
+      updateData.bio = profileData.bio ? profileData.bio.trim() : null;
+    }
+    if (profileData.avatarUrl !== undefined) {
+      updateData.avatarUrl = profileData.avatarUrl ? profileData.avatarUrl.trim() : null;
+    }
+    if (typeof profileData.isPublic === "boolean") {
+      updateData.isPublic = profileData.isPublic;
+    }
+
+    const saved = await prisma.studentProfile.upsert({
+      where: { walletAddress: normalizedAddress },
+      update: updateData,
+      create: {
+        walletAddress: normalizedAddress,
+        displayName: updateData.displayName ?? null,
+        university: updateData.university ?? "Monad Üniversitesi",
+        department: updateData.department ?? null,
+        bio: updateData.bio ?? null,
+        avatarUrl: updateData.avatarUrl ?? null,
+        isPublic: updateData.isPublic ?? true,
+      },
+    });
+
+    return {
+      walletAddress: checksumAddress,
+      displayName: saved.displayName,
+      university: saved.university,
+      department: saved.department,
+      bio: saved.bio,
+      avatarUrl: saved.avatarUrl,
+      isPublic: saved.isPublic,
+      createdAt: saved.createdAt,
+      updatedAt: saved.updatedAt,
+    };
+  }
 
   async function getStudentProfileFromChainAndIndex(
     rawWalletAddress,
@@ -146,6 +259,8 @@ export function createStudentService({
   }
 
   return {
+    getStudentProfile,
+    upsertStudentProfile,
     getStudentProfileFromChainAndIndex,
   };
 }

@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { Outlet } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ScrollToTop from "../components/ScrollToTop";
+import RouteLoadingFallback from "../components/RouteLoadingFallback";
 import { useAppContext } from "../context/AppContext";
 import { MONAD_EXPLORER_URL } from "../data/events";
 
@@ -100,7 +102,9 @@ export default function RootLayout() {
       )}
 
       <main className="main-content">
-        <Outlet />
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <Footer />

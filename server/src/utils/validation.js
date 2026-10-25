@@ -277,6 +277,20 @@ export const certificateIssueBodySchema = z.object({
     .default(""),
 });
 
+export const studentProfileUpdateSchema = z.object({
+  displayName: safeTextField("Görüntüleme adı", 60, false).optional().nullable(),
+  university: safeTextField("Üniversite", 100, false).optional().nullable(),
+  department: safeTextField("Bölüm", 100, false).optional().nullable(),
+  bio: safeTextField("Biyografi", 300, false).optional().nullable(),
+  avatarUrl: z
+    .string()
+    .trim()
+    .max(500, "Avatar URL en fazla 500 karakter olabilir.")
+    .optional()
+    .nullable(),
+  isPublic: z.boolean().optional().default(true),
+});
+
 export function parseWithZod(schema, payload) {
   const result = schema.safeParse(payload);
   if (!result.success) {

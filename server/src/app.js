@@ -144,7 +144,14 @@ export function buildCampusPassApp({
     "/api/events",
     createEventRoutes({ eventController, requireOrganizerSession })
   );
-  app.use("/api/students", createStudentRoutes({ studentController }));
+  app.use(
+    "/api/students",
+    createStudentRoutes({
+      studentController,
+      requireAuthSession: requireOrganizerSession,
+      optionalAuthSession,
+    })
+  );
   app.use(
     "/api/certificates",
     createCertificateRoutes({

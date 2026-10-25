@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import CertificateModal from "../components/CertificateModal";
@@ -18,6 +18,7 @@ import {
 import {
   ensureStudentSiweSession,
   fetchEventsMetadataFromBackend,
+  fetchStudentAccountProfileFromBackend,
   fetchMyCertificatesFromBackend,
   fetchMyCommunitiesFromBackend,
   fetchWalletCertificatesFromBackend,
@@ -110,6 +111,7 @@ export default function StudentProfile({
       : defaultTab || "events";
 
   const [profile, setProfile] = useState(EMPTY_PROFILE);
+  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(() => Boolean(account));
   const [rpcError, setRpcError] = useState(null);
   const [internalTab, setInternalTab] = useState(initialTab);
@@ -260,6 +262,11 @@ export default function StudentProfile({
           loadCertificatesForAccount(targetAccount),
           loadMyCommunities(),
         ]);
+        let profileDetails = null;
+        try {
+          profileDetails = await fetchStudentAccountProfileFromBackend(targetAccount);
+        } catch {}
+        setUserProfile(profileDetails);
         setProfile(data);
         if (Array.isArray(certList)) {
           setCertificates(certList);
@@ -488,7 +495,10 @@ export default function StudentProfile({
                   boxShadow: "0 8px 20px rgba(111, 136, 255, 0.35)",
                 }}
               >
-                {account.slice(2, 4).toUpperCase()}
+                {!userProfile?.avatarUrl &&
+                  (userProfile?.displayName
+                    ? userProfile.displayName.slice(0, 2).toUpperCase()
+                    : account.slice(2, 4).toUpperCase())}
               </div>
 
               <div>
@@ -496,6 +506,11 @@ export default function StudentProfile({
                   <span className="stitch-badge stitch-badge-open">
                     Cüzdan Doğrulandı ✓
                   </span>
+                  {userProfile?.university && (
+                    <span className="stitch-badge stitch-badge-testnet" style={{ backgroundColor: "rgba(124, 58, 237, 0.15)", borderColor: "rgba(124, 58, 237, 0.35)" }}>
+                      {userProfile.department ? `${userProfile.department} • ` : ""}{userProfile.university}
+                    </span>
+                  )}
                   {isCorrectNetwork ? (
                     <span className="stitch-badge stitch-badge-testnet">
                       Monad Testnet ({MONAD_CHAIN_ID})
@@ -508,8 +523,8 @@ export default function StudentProfile({
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                  <h1 className="font-headline-md font-label-mono" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
-                    {account}
+                  <h1 className="font-headline-md" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
+                    {userProfile?.displayName || account}
                   </h1>
                   <button
                     type="button"
@@ -524,7 +539,17 @@ export default function StudentProfile({
                   </button>
                 </div>
 
+                {userProfile?.bio && (
+                  <p style={{ margin: "0.4rem 0 0 0", fontSize: "0.875rem", color: "var(--stitch-outline)", maxWidth: "600px" }}>
+                    {userProfile.bio}
+                  </p>
+                )}
                 <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+                  {userProfile?.displayName && (
+                    <span style={{ color: "var(--stitch-outline)", fontFamily: "monospace" }}>
+                      {shortenAddress(account)}
+                    </span>
+                  )}
                   <a
                     href={`${MONAD_EXPLORER_URL}/address/${account}`}
                     target="_blank"
@@ -560,6 +585,22 @@ export default function StudentProfile({
                 </span>
                 {loading ? "Yenileniyor..." : "Verileri Yenile"}
               </button>
+              <Link
+                to="/settings"
+                className="stitch-btn-secondary"
+                style={{
+                  fontSize: "0.8125rem",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                  settings
+                </span>
+                Profili & Ayarları Düzenle
+              </Link>
             </div>
           </div>
         </section>

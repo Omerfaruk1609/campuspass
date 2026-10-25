@@ -355,7 +355,62 @@ async function runPostgresIntegrationSuite() {
       "6. [BAŞARILI] Faz 12 Community & CommunityMember CRUD, P2002 Unique Constraint ve Rol/Durum döngüsü doğrulandı."
     );
 
+    // 7. Faz 14 — StudentProfile CRUD, P2002 Unique Constraint ve Güncelleme Testi
+    const TEST_STUDENT_PROFILE_WALLET = "0x1414141414141414141414141414141414141414";
+    await prisma.studentProfile.deleteMany({ where: { walletAddress: TEST_STUDENT_PROFILE_WALLET } });
+
+    const createdStudentProfile = await prisma.studentProfile.create({
+      data: {
+        walletAddress: TEST_STUDENT_PROFILE_WALLET,
+        displayName: "Faz 14 Test Öğrencisi",
+        university: "Monad Üniversitesi",
+        department: "Bilgisayar Mühendisliği",
+        bio: "Gerçek PostgreSQL Faz 14 entegrasyon testi biyografisi.",
+        avatarUrl: "https://example.com/avatar14.png",
+        isPublic: true,
+      },
+    });
+
+    if (!createdStudentProfile.id || createdStudentProfile.displayName !== "Faz 14 Test Öğrencisi") {
+      throw new Error("StudentProfile create doğrulaması başarısız.");
+    }
+
+    let profileUniqueCaught = false;
+    try {
+      await prisma.studentProfile.create({
+        data: {
+          walletAddress: TEST_STUDENT_PROFILE_WALLET,
+          displayName: "Mükerrer Deneme",
+        },
+      });
+    } catch (err) {
+      if (err.code === "P2002") {
+        profileUniqueCaught = true;
+      } else {
+        throw err;
+      }
+    }
+    if (!profileUniqueCaught) {
+      throw new Error("StudentProfile walletAddress unique constraint (P2002) ihlali yakalanmadı!");
+    }
+
+    const updatedProfile = await prisma.studentProfile.update({
+      where: { walletAddress: TEST_STUDENT_PROFILE_WALLET },
+      data: {
+        bio: "Güncellenmiş test biyografisi.",
+        isPublic: false,
+      },
+    });
+
+    if (updatedProfile.isPublic !== false || updatedProfile.bio !== "Güncellenmiş test biyografisi.") {
+      throw new Error("StudentProfile update doğrulaması başarısız.");
+    }
+    console.log(
+      "7. [BAŞARILI] Faz 14 StudentProfile CRUD, P2002 Unique Constraint ve Gizlilik (isPublic) güncellemeleri doğrulandı."
+    );
+
     // İzole test kayıtlarını temizle
+    await prisma.studentProfile.deleteMany({ where: { walletAddress: TEST_STUDENT_PROFILE_WALLET } });
     await prisma.attendanceCertificate.delete({ where: { id: createdCert.id } });
     await prisma.eventMetadata.delete({ where: { id: createdMeta.id } });
     await prisma.communityMember.deleteMany({ where: { communityId: createdComm.id } });

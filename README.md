@@ -1,6 +1,6 @@
 # CampusPass — Monad Testnet Blokzincir Tabanlı Üniversite Etkinlik, Topluluk ve Katılım Platformu
 
-**CampusPass**, üniversite öğrenci topluluklarının ve etkinlik organizatörlerinin etkinlik oluşturma, biletleme, cüzdan tabanlı kayıt (`registerForEvent`), dinamik EIP-191 imzalı QR katılım doğrulama (`markAttendance`), **SIWE (Sign-In with Ethereum / EIP-4361)** kimlik doğrulama, rol tabanlı topluluk yönetimi (RBAC), **PostgreSQL + Prisma ORM** kalıcı veri katmanı, **Blockchain Event Indexer** ve **React Router DOM v7** mimarisine sahip tam yığın Web3 platformudur.
+**CampusPass**, üniversite öğrenci topluluklarının ve etkinlik organizatörlerinin etkinlik oluşturma, biletleme, cüzdan tabanlı kayıt (`registerForEvent`), dinamik EIP-191 imzalı QR katılım doğrulama (`markAttendance`), **SIWE (Sign-In with Ethereum / EIP-4361)** kimlik doğrulama, rol tabanlı topluluk yönetimi (RBAC), **PostgreSQL + Prisma ORM** kalıcı veri katmanı, **Blockchain Event Indexer**, **React Router DOM v7** ve **React 19 rota düzeyinde kod bölümleme (code-splitting)** mimarisine sahip tam yığın Web3 platformudur.
 
 ---
 
@@ -20,10 +20,12 @@
 
 ## 2. Teknoloji Yığını ve Mimari
 
-* **Ön Yüz (Frontend):** React 19 + Vite 8 (ESM) + Google Stitch Cosmic Navy Tasarım Sistemi
+* **Ön Yüz (Frontend):** React 19 + Vite 8.3 (ESM) + Google Stitch Cosmic Navy Tasarım Sistemi
+* **Performans & Kod Bölümleme (Faz 14):** `React.lazy` ve dinamik `import()` ile ayrıştırılmış rota öbekleri, `vendor-ethers` ve `vendor-react` satıcı demetleri, erişilebilir `<Suspense>` yükleme katmanı (%90.9 ana JS küçülmesi)
 * **Yönlendirme (Routing):** React Router DOM v7 (Bildirimsel Rota Ağacı, Route Guards, Deep Linking, 404 Sayfası)
+* **Öğrenci Profili & Hesap Ayarları (Faz 14):** Kişisel isim, üniversite, bölüm, biyografi, avatar ve gizlilik (`isPublic`) tercihlerini yöneten `/settings` rotası ve SIWE korumalı REST API uç noktaları
 * **Backend API:** Node.js + Express Uyumlu HTTP Katmanı + Zod Giriş Validasyonu
-* **Veritabanı & ORM:** PostgreSQL 16 + Prisma ORM 6 (`server/prisma/schema.prisma`)
+* **Veritabanı & ORM:** PostgreSQL 16 + Prisma ORM 6 (`server/prisma/schema.prisma` — 10 doğrulanmış veri modeli)
 * **Kimlik Doğrulama:** EIP-4361 (SIWE) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token` + Sekmeler Arası Eşitleme (`campuspass_auth_event`)
 * **Blokzincir Entegrasyonu:** Ethers.js v6 + Salt-Okunur RPC ve İmzacı Sağlayıcı
 * **Event Indexer:** Blokzincir olaylarını (`EventCreated`, `UserRegistered`, `AttendanceMarked`) aralıksız tarayan ve reorg korumalı checkpoint tablosunda saklayan indeksleyici servis
@@ -36,31 +38,31 @@
 campuspass/
 ├── contracts/                  # CampusPass.sol akıllı sözleşmesi
 ├── src/                        # React 19 + Vite frontend uygulaması
-│   ├── components/             # Navbar, Footer, EventCard, CommunityCard, ScrollToTop
+│   ├── components/             # Navbar, Footer, EventCard, CommunityCard, ScrollToTop, RouteLoadingFallback
 │   │   └── guards/             # ProtectedRoute, OrganizerGuard, CommunityManageGuard
 │   ├── context/                # AppContext (Merkezi durum, cüzdan, oturum ve işlemler)
-│   ├── layouts/                # RootLayout (Paylaşılan kabuk düzeni ve Outlet)
+│   ├── layouts/                # RootLayout (Paylaşılan kabuk düzeni, Suspense ve Outlet)
 │   ├── pages/                  # HomePage, EventPage, CommunityDiscovery, CommunityProfile,
-│   │                           # CommunityManage, StudentProfile, OrganizerDashboard,
+│   │                           # CommunityManage, StudentProfile, AccountSettingsPage, OrganizerDashboard,
 │   │                           # OrganizerEventAnalytics, CertificateVerification, NotFound
-│   ├── routes/                 # AppRoutes (Merkezi bildirimsel rota yapılandırması)
-│   ├── utils/                  # apiClient, eventMetadata, qrVerification, certificatePdf
+│   ├── routes/                 # AppRoutes (Merkezi bildirimsel rota yapılandırması ve React.lazy)
+│   ├── utils/                  # apiClient, eventMetadata, qrVerification, certificatePdf, studentProfile
 │   └── data/                   # Monad Testnet ABI, sabitler ve deployment bilgisi
 ├── server/                     # Backend API, Prisma & Event Indexer
 │   ├── prisma/
-│   │   ├── schema.prisma       # 9 doğrulanmış PostgreSQL veri modeli
-│   │   └── migrations/         # SQL migration geçmişi
+│   │   ├── schema.prisma       # 10 doğrulanmış PostgreSQL veri modeli (StudentProfile dahil)
+│   │   └── migrations/         # SQL migration geçmişi (Faz 14 dahil)
 │   ├── src/
 │   │   ├── app.js              # Bağımlılık enjeksiyonlu API fabrika fonksiyonu
 │   │   ├── index.js            # Sunucu giriş noktası
 │   │   ├── routes/             # health, auth, events, students, certificates, organizer, communities
 │   │   ├── controllers/        # İstek denetleyicileri
-│   │   ├── services/           # authService, blockchainService, certificateService, communityService, eventService
+│   │   ├── services/           # authService, blockchainService, certificateService, communityService, eventService, studentService
 │   │   ├── middleware/         # authMiddleware (require & optional), security, rateLimiter, errorHandler
 │   │   └── indexer/            # eventIndexer.js ve runIndexer.js
-│   ├── tests/                  # PostgreSQL entegrasyon testi
+│   ├── tests/                  # PostgreSQL entegrasyon testleri (7 test)
 │   └── .env.example
-├── test/                       # 126 Mocha/Chai regresyon testi
+├── test/                       # 134 Mocha/Chai regresyon testi
 └── README.md
 ```
 
@@ -68,7 +70,7 @@ campuspass/
 
 ## 3. Ön Yüz Rota Haritası (Application Route Map)
 
-Tüm rotalar `src/routes/AppRoutes.jsx` dosyasında bildirimsel olarak tanımlanmıştır:
+Tüm rotalar `src/routes/AppRoutes.jsx` dosyasında bildirimsel olarak tanımlanmış olup `React.lazy()` ile talep üzerine asenkron yüklenir:
 
 | URL Yolu | Sayfa Bileşeni | Erişim Muhafızı (Guard) | Açıklama |
 |---|---|---|---|
@@ -78,8 +80,9 @@ Tüm rotalar `src/routes/AppRoutes.jsx` dosyasında bildirimsel olarak tanımlan
 | `/communities` | `CommunityDiscoveryPage` | Herkese Açık | Üniversite topluluklarını keşfetme ve oluşturma |
 | `/communities/:slug` | `CommunityProfilePage` | İsteğe Bağlı Oturum | Topluluk profili, üyelik butonları ve etkinlikleri |
 | `/communities/:slug/manage` | `CommunityManagePage` | `CommunityManageGuard` (`OWNER`/`ADMIN`) | Topluluk yönetim paneli (Roller, başvurular, etkinlik bağlama) |
-| `/profile` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci etkinlik kayıtları, rozetler ve geçmiş |
+| `/profile` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci profili, kayıtlı etkinlikler, rozetler ve geçmiş |
 | `/profile/certificates` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Kazanılan blokzincir dijital katılım sertifikaları |
+| `/settings` | `AccountSettingsPage` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci profili düzenleme, gizlilik ve SIWE oturum ayarları |
 | `/organizer` | `OrganizerDashboardPage` | `OrganizerGuard` (Cüzdan Zorunlu) | Organizatör panosu, QR okutma ve katılım işaretleme |
 | `/organizer/events/:eventId` | `OrganizerEventAnalyticsPage` | `OrganizerGuard` (Sahiplik Zorunlu) | Belirli bir etkinliğe ait katılım hunisi ve zaman serisi |
 | `/verify` | `CertificateVerificationPage` | Herkese Açık | Sertifika doğrulama arama ekranı |
@@ -99,14 +102,7 @@ docker run --name campuspass-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=p
 docker exec -it campuspass-pg psql -U postgres -c "CREATE DATABASE campuspass_test;"
 ```
 
-### 4.2. Ortam Değişkenleri (.env)
-Örnek ortam dosyalarını kopyalayın:
-```bash
-cp .env.example .env
-cp server/.env.example server/.env
-```
-
-`server/.env` temel konfigürasyonu:
+### 4.2. Ortam Değişkenleri (`server/.env`)
 ```env
 PORT=3001
 NODE_ENV=development
@@ -126,7 +122,7 @@ SIWE_URI="http://localhost:5173"
 # Backend bağımlılıklarını kurun
 cd server && npm install && cd ..
 
-# Prisma şemasını ve modelleri (9 model) doğrula
+# Prisma şemasını ve modelleri (10 model) doğrula
 npm run db:validate
 
 # Prisma Client üret ve veritabanı tablolarını senkronize et
@@ -161,12 +157,12 @@ Uygulamayı tarayıcınızda `http://localhost:5173` adresinden açabilirsiniz.
 
 ---
 
-## 6. Kimlik Doğrulama (SIWE) ve Oturum Yaşam Döngüsü
+## 6. Kimlik Doğrulama (SIWE) ve Hesap Ayarları
 
 1. **Nonce Talebi:** Ön yüz, `GET /api/auth/nonce?walletAddress=0x...` çağrısı yaparak 128-bit kriptografik rastgele tek kullanımlık bir nonce edinir.
 2. **Mesaj İmzası:** EIP-4361 standart metni derlenir ve kullanıcının cüzdanına (MetaMask vb.) kişisel imza (`personal_sign` / EIP-191) için sunulur. Özel anahtar istemciden asla ayrılmaz.
 3. **Doğrulama ve Oturum Açma:** `POST /api/auth/verify` mesajı ve imzayı doğrular, nonce'u atomik tüketir (`NONCE_REPLAY_DETECTED` koruması), veritabanında oturum kaydı oluşturur, `HttpOnly; SameSite=Lax` güvenlikli çerez ve durum değiştiren işlemler için `csrfToken` döndürür.
-4. **Oturum Restorasyonu (Hydration):** Sayfa yenilendiğinde `AppContext`, `checkServerSession()` ile `/api/auth/session` uç noktasını sorgular; geçerli oturum varsa kullanıcıyı tekrar imza atmaya zorlamadan ayrıcalıklarını geri yükler.
+4. **Öğrenci Profili ve Tercihler (`/settings`):** Kullanıcı display name, üniversite, bölüm, biyografi, avatar URL ve genel gizlilik (`isPublic`) ayarlarını `PATCH /api/students/profile` üzerinden güvenle güncelleyebilir.
 5. **Cüzdan Ayırma vs. SIWE Logout:**
    - **Cüzdanı Ayır (Disconnect):** Yalnızca tarayıcıdaki cüzdan bağlantı durumunu sıfırlar.
    - **SIWE Oturumunu Kapat (Logout):** Sunucuda `POST /api/auth/logout` çağrılır, veritabanında `revokedAt` işaretlenir, HttpOnly çerez temizlenir ve `campuspass_auth_event` üzerinden açık olan tüm sekmelerde oturum kapatma anında senkronize edilir.
@@ -176,31 +172,19 @@ Uygulamayı tarayıcınızda `http://localhost:5173` adresinden açabilirsiniz.
 ## 7. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha ve Solidity testlerini çalıştır (126 test)
+# Tüm Mocha ve Solidity testlerini çalıştır (134 test)
 npm test
 
-# Yalnızca Faz 13 Stabilizasyon testlerini çalıştır
-npx hardhat test test/Phase13Stabilization.js --no-compile
-
-# Yalnızca Faz 12.5 React Router testlerini çalıştır
-npx hardhat test test/ReactRouterPhase12_5.js --no-compile
-
-# Yalnızca Faz 12 Topluluk Yönetimi testlerini çalıştır
-npx hardhat test test/CommunityManagementPhase12.js --no-compile
-
-# Yalnızca Faz 9 Backend ve Indexer testlerini çalıştır
-npm run test:backend
-
-# Prisma şema doğrulaması
-npm run db:validate
-
-# Gerçek PostgreSQL bağlantı ve entegrasyon kontrolü
+# Gerçek PostgreSQL entegrasyon testlerini çalıştır (7 test)
 npm run test:postgres
+
+# Prisma veri şeması bütünlük kontrolü (10 model)
+npm run db:validate
 
 # Oxlint statik kod analizi (0 hata)
 npm run lint
 
-# Üretim derlemesi (Vite build)
+# Üretim derlemesi (Vite build - kod bölümleme doğrulaması)
 npm run build
 ```
 
@@ -211,7 +195,7 @@ npm run build
 > **Önemli:** Uygulama henüz üretime dağıtılmamıştır. Canlıya alma aşamasında aşağıdaki gereksinimler uygulanmalıdır:
 
 1. **TLS / HTTPS:** Üretim ortamında tüm trafik HTTPS üzerinden sunulmalıdır. `NODE_ENV=production` aktif olduğunda oturum çerezi otomatik olarak `Secure: true` bayrağı kazanır.
-2. **SPA URL Rewrite (Fallback):** React Router alt rotalarının (`/events/1`, `/communities/slug`, `/verify/CERT-1`) doğrudan sayfa yenilemelerinde veya derin bağlantılarda 404 vermemesi için web sunucusunda `index.html` fallback kuralı tanımlanmalıdır:
+2. **SPA URL Rewrite (Fallback):** React Router alt rotalarının (`/events/1`, `/communities/slug`, `/settings`, `/verify/CERT-1`) doğrudan sayfa yenilemelerinde veya derin bağlantılarda 404 vermemesi için web sunucusunda `index.html` fallback kuralı tanımlanmalıdır:
    - **Nginx:** `location / { try_files $uri $uri/ /index.html; }`
    - **Vercel / Netlify:** Rewrite kuralı `/* -> /index.html 200`
 3. **CORS Allowlist:** `CORS_ALLOWED_ORIGINS` ortam değişkeni yalnızca uygulamanın resmi alan adı ile sınırlandırılmalıdır.
@@ -224,5 +208,5 @@ npm run build
 
 * **MetaMask Yanlış Ağ Uyarısı:** Sağ üstteki "Ağı Değiştir (10143)" butonuna tıklayarak cüzdanınızın Monad Testnet'e geçmesini sağlayın. Otomatik eklenemezse Chain ID: `10143`, RPC: `https://testnet-rpc.monad.xyz`, Sembol: `MON` bilgilerini manuel girin.
 * **Topluluk Yönetim Paneline Girişte 403 Hatası:** Yalnızca topluluğun `OWNER` veya `ADMIN` rolüne sahip üyeleri `/communities/:slug/manage` rotasına erişebilir. Topluluk profilinden rolünüzü kontrol edin.
-* **PostgreSQL "EACCES / Connection Refused" Hatası:** PostgreSQL servisinin çalıştığından ve `server/.env` içindeki `DATABASE_URL` port/şifre bilgilerinin doğru olduğundan emin olun.
+* **PostgreSQL "EACCES / Connection Refused" Hatası:** PostgreSQL servisinin çalıştığından ve `server/.env` içindeki `DATABASE_URL` port/şifre bilgilerinin doğru olduğundan emin olun. Docker container'ını kontrol etmek için `docker ps` komutunu kullanın.
 * **Windows Git EPERM / Lock Hatası:** Windows ortamında terminal kilitlenmelerini önlemek için komutların yönetici izinleriyle veya ilgili klasör kilitleri temizlenerek çalıştırılması önerilir.

@@ -219,3 +219,20 @@ model AttendanceCertificate {
   @@index([participantAddress])
   @@index([chainId, contractAddress, eventId])
 }
+
+
+/// Öğrenci profili ve hesap tercihleri modeli (Faz 14)
+model StudentProfile {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  displayName   String?
+  university    String   @default("Monad Üniversitesi")
+  department    String?
+  bio           String?
+  avatarUrl     String?
+  isPublic      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([walletAddress])
+}

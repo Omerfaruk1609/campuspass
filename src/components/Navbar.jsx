@@ -6,8 +6,6 @@ import { ensureSiweSession } from "../utils/apiClient";
 export default function Navbar({
   account,
   chainId,
-  activeTab,
-  onSelectTab,
   onConnectWallet,
   onSwitchNetwork,
   isConnecting,
@@ -98,7 +96,6 @@ export default function Navbar({
             shrink: 0,
             textDecoration: "none",
           }}
-          onClick={() => onSelectTab && onSelectTab("home")}
         >
           <div
             style={{
@@ -109,225 +106,193 @@ export default function Navbar({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontWeight: 800,
-              fontSize: "0.95rem",
-              color: "#ffffff",
               boxShadow: "0 0 16px rgba(111, 136, 255, 0.4)",
             }}
           >
-            CP
+            <span className="material-symbols-outlined" style={{ color: "#ffffff", fontSize: "20px" }}>
+              school
+            </span>
           </div>
-          <span className="font-headline-md" style={{ color: "var(--stitch-on-surface)", fontWeight: 700 }}>
-            Campus<span style={{ color: "var(--stitch-primary)" }}>Pass</span>
-          </span>
+          <div>
+            <span
+              style={{
+                fontSize: "1.125rem",
+                fontWeight: 700,
+                color: "#ffffff",
+                letterSpacing: "-0.01em",
+                display: "block",
+                lineHeight: 1.2,
+              }}
+            >
+              Campus<span style={{ color: "#6f88ff" }}>Pass</span>
+            </span>
+            <span
+              style={{
+                fontSize: "0.625rem",
+                color: "var(--stitch-outline)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                display: "block",
+                lineHeight: 1,
+              }}
+            >
+              Monad Testnet
+            </span>
+          </div>
         </Link>
 
-        {/* Desktop Navigation Tabs */}
+        {/* Primary Navigation Links */}
         <nav
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "0.35rem",
-            backgroundColor: "rgba(17, 31, 59, 0.6)",
-            padding: "0.25rem 0.4rem",
-            borderRadius: "0.625rem",
-            border: "1px solid rgba(142, 144, 161, 0.15)",
+            gap: "0.25rem",
           }}
-          className="stitch-nav-tabs"
+          className="hide-mobile"
         >
           <NavLink
             to="/"
             end
-            className="font-headline-sm"
-            style={({ isActive }) => {
-              const active = isActive || activeTab === "home";
-              return {
-                padding: "0.35rem 0.85rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
-                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-                fontWeight: active ? 600 : 500,
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("home")}
+            className={({ isActive }) =>
+              `stitch-nav-link ${isActive ? "active" : ""}`
+            }
           >
+            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+              home
+            </span>
             Ana Sayfa
           </NavLink>
 
           <NavLink
             to="/events"
-            className="font-headline-sm"
-            style={({ isActive }) => {
-              const active = isActive || activeTab === "all";
-              return {
-                padding: "0.35rem 0.85rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
-                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-                fontWeight: active ? 600 : 500,
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("all")}
+            className={({ isActive }) =>
+              `stitch-nav-link ${isActive ? "active" : ""}`
+            }
           >
+            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+              event
+            </span>
             Etkinlikler
           </NavLink>
 
           <NavLink
             to="/communities"
-            className="font-headline-sm"
-            style={({ isActive }) => {
-              const active =
-                isActive ||
-                activeTab === "communities" ||
-                activeTab === "community-profile" ||
-                activeTab === "community-manage";
-              return {
-                padding: "0.35rem 0.85rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
-                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-                fontWeight: active ? 600 : 500,
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("communities")}
+            className={({ isActive }) =>
+              `stitch-nav-link ${isActive ? "active" : ""}`
+            }
           >
+            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+              groups
+            </span>
             Topluluklar
           </NavLink>
 
-          <NavLink
-            to="/profile"
-            className="font-headline-sm"
-            style={({ isActive }) => {
-              const active = isActive || activeTab === "student";
-              return {
-                padding: "0.35rem 0.85rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
-                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-                fontWeight: active ? 600 : 500,
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("student")}
-          >
-            Öğrenci Panelim
-          </NavLink>
+          {account && (
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                `stitch-nav-link ${isActive ? "active" : ""}`
+              }
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                badge
+              </span>
+              Öğrenci Paneli
+            </NavLink>
+          )}
+
+          {account && (
+            <NavLink
+              to="/organizer"
+              className={({ isActive }) =>
+                `stitch-nav-link ${isActive ? "active" : ""}`
+              }
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                dashboard
+              </span>
+              Organizatör
+            </NavLink>
+          )}
 
           <NavLink
             to="/verify"
-            className="font-headline-sm"
-            style={({ isActive }) => {
-              const active = isActive || activeTab === "verify";
-              return {
-                padding: "0.35rem 0.85rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
-                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-                fontWeight: active ? 600 : 500,
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("verify")}
+            className={({ isActive }) =>
+              `stitch-nav-link ${isActive ? "active" : ""}`
+            }
           >
+            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+              verified
+            </span>
             Sertifika Doğrula
-          </NavLink>
-
-          <NavLink
-            to="/organizer"
-            className="font-label-badge"
-            style={({ isActive }) => {
-              const active = isActive || activeTab === "organizer";
-              return {
-                marginLeft: "0.25rem",
-                padding: "0.35rem 0.75rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: active
-                  ? "var(--stitch-secondary-container)"
-                  : "var(--stitch-surface-container-high)",
-                color: active
-                  ? "var(--stitch-on-secondary-container)"
-                  : "var(--stitch-secondary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-              };
-            }}
-            onClick={() => onSelectTab && onSelectTab("organizer")}
-          >
-            Organizatör Paneli
           </NavLink>
         </nav>
 
-        {/* Right Controls: Network pill, Contract link, Wallet connect */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", shrink: 0 }}>
-          {/* Monad Testnet Pill */}
-          <div
-            className="font-label-mono"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.4rem",
-              padding: "0.35rem 0.75rem",
-              borderRadius: "9999px",
-              backgroundColor: "var(--stitch-surface-container-high)",
-              color: "var(--stitch-tertiary)",
-              border: "1px solid rgba(123, 208, 255, 0.25)",
-            }}
-          >
-            <span
+        {/* Right Section: Network & Wallet Controls */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          {/* Network Indicator / Switcher */}
+          {account && (
+            <div
               style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: "var(--stitch-tertiary)",
-                boxShadow: "0 0 8px rgba(123, 208, 255, 0.8)",
-                display: "inline-block",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                padding: "0.3rem 0.65rem",
+                borderRadius: "9999px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                backgroundColor: isCorrectNetwork
+                  ? "rgba(111, 136, 255, 0.12)"
+                  : "rgba(239, 68, 68, 0.15)",
+                border: isCorrectNetwork
+                  ? "1px solid rgba(111, 136, 255, 0.3)"
+                  : "1px solid rgba(239, 68, 68, 0.4)",
+                color: isCorrectNetwork ? "#b9c3ff" : "#fca5a5",
               }}
-            />
-            <span style={{ fontSize: "0.78rem" }}>Monad Testnet</span>
-          </div>
-
-          {/* Network Switch Button if wrong network */}
-          {account && !isCorrectNetwork && (
-            <button
-              type="button"
-              className="stitch-btn-secondary"
-              style={{
-                padding: "0.4rem 0.75rem",
-                fontSize: "0.82rem",
-                borderColor: "#f59e0b",
-                color: "#fcd34d",
-              }}
-              onClick={onSwitchNetwork}
+              className="hide-mobile"
             >
-              Ağı Değiştir (10143)
-            </button>
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "50%",
+                  backgroundColor: isCorrectNetwork ? "#10b981" : "#ef4444",
+                  boxShadow: isCorrectNetwork
+                    ? "0 0 6px #10b981"
+                    : "0 0 6px #ef4444",
+                }}
+              />
+              {isCorrectNetwork ? (
+                "Monad Testnet"
+              ) : (
+                <button
+                  type="button"
+                  onClick={onSwitchNetwork}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "inherit",
+                    fontWeight: "inherit",
+                    cursor: "pointer",
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                >
+                  Monad&apos;a Geç
+                </button>
+              )}
+            </div>
           )}
 
-          {/* Connected Wallet Pill with Account & Session Dropdown */}
+          {/* Wallet Connection / Session Button & Dropdown */}
           {account ? (
-            <div ref={menuRef} style={{ position: "relative" }}>
+            <div style={{ position: "relative" }} ref={menuRef}>
               <button
                 type="button"
                 onClick={() => setAccountMenuOpen((prev) => !prev)}
@@ -357,30 +322,46 @@ export default function Navbar({
                     justifyContent: "center",
                     fontSize: "0.7rem",
                     fontWeight: 700,
-                    color: "#fff",
+                    color: "#ffffff",
                   }}
                 >
                   {account.slice(2, 4).toUpperCase()}
                 </div>
                 <span
-                  className="font-label-mono"
-                  style={{ color: "var(--stitch-on-surface)", fontSize: "0.82rem" }}
+                  style={{
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    fontFamily: "monospace",
+                    color: "var(--stitch-on-surface)",
+                  }}
                 >
                   {shortenAddress(account)}
                 </span>
+                {sessionState?.authenticated && (
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      backgroundColor: "#10b981",
+                      title: "SIWE Oturumu Aktif",
+                    }}
+                  />
+                )}
                 <span
                   className="material-symbols-outlined"
                   style={{
-                    fontSize: "18px",
-                    color: "var(--stitch-on-surface-variant)",
-                    transform: accountMenuOpen ? "rotate(180deg)" : "none",
-                    transition: "transform 0.15s ease",
+                    fontSize: "16px",
+                    color: "var(--stitch-outline)",
+                    transition: "transform 0.2s",
+                    transform: accountMenuOpen ? "rotate(180deg)" : "rotate(0deg)",
                   }}
                 >
                   arrow_drop_down
                 </span>
               </button>
 
+              {/* Account Dropdown Menu */}
               {accountMenuOpen && (
                 <div
                   style={{
@@ -388,52 +369,48 @@ export default function Navbar({
                     top: "calc(100% + 8px)",
                     right: 0,
                     width: "280px",
-                    backgroundColor: "var(--stitch-surface-container-high)",
-                    border: "1px solid rgba(142, 144, 161, 0.25)",
-                    borderRadius: "0.875rem",
-                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.5)",
-                    padding: "1rem",
-                    zIndex: 100,
+                    backgroundColor: "var(--stitch-surface-container)",
+                    border: "1px solid rgba(185, 195, 255, 0.2)",
+                    borderRadius: "0.75rem",
+                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)",
+                    padding: "0.75rem",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "0.75rem",
+                    gap: "0.5rem",
+                    zIndex: 60,
                   }}
                 >
-                  {/* Cüzdan Adresi & Kopyala */}
-                  <div>
-                    <span
-                      className="font-label-mono"
+                  {/* Cüzdan Bilgisi */}
+                  <div style={{ padding: "0.25rem 0.5rem" }}>
+                    <div
                       style={{
-                        fontSize: "0.72rem",
-                        color: "var(--stitch-on-surface-variant)",
+                        fontSize: "0.6875rem",
+                        color: "var(--stitch-outline)",
                         textTransform: "uppercase",
+                        letterSpacing: "0.06em",
                       }}
                     >
-                      Bağlı Cüzdan Adresi
-                    </span>
+                      Bağlı Cüzdan
+                    </div>
                     <div
                       style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        backgroundColor: "var(--stitch-surface-container)",
-                        padding: "0.4rem 0.6rem",
-                        borderRadius: "0.5rem",
-                        marginTop: "0.25rem",
+                        gap: "0.5rem",
+                        marginTop: "0.2rem",
                       }}
                     >
                       <span
-                        className="font-label-mono"
                         style={{
-                          fontSize: "0.78rem",
+                          fontFamily: "monospace",
+                          fontSize: "0.8rem",
                           color: "var(--stitch-on-surface)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          maxWidth: "180px",
                         }}
                       >
-                        {account}
+                        {shortenAddress(account)}
                       </span>
                       <button
                         type="button"
@@ -441,14 +418,20 @@ export default function Navbar({
                         style={{
                           background: "none",
                           border: "none",
-                          color: copied ? "var(--stitch-primary)" : "var(--stitch-tertiary)",
+                          color: copied ? "#10b981" : "var(--stitch-primary)",
                           cursor: "pointer",
                           fontSize: "0.75rem",
-                          fontWeight: 600,
-                          padding: "0.2rem 0.4rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          padding: "0.15rem 0.35rem",
+                          borderRadius: "0.25rem",
                         }}
                       >
-                        {copied ? "Kopyalandı!" : "Kopyala"}
+                        <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>
+                          {copied ? "check" : "content_copy"}
+                        </span>
+                        {copied ? "Kopyalandı" : "Kopyala"}
                       </button>
                     </div>
                   </div>
@@ -456,90 +439,93 @@ export default function Navbar({
                   {/* SIWE Oturum Durumu */}
                   <div
                     style={{
-                      padding: "0.6rem",
+                      padding: "0.45rem 0.6rem",
                       borderRadius: "0.5rem",
                       backgroundColor: sessionState?.authenticated
                         ? "rgba(16, 185, 129, 0.1)"
                         : "rgba(245, 158, 11, 0.1)",
-                      border: `1px solid ${
-                        sessionState?.authenticated
-                          ? "rgba(16, 185, 129, 0.3)"
-                          : "rgba(245, 158, 11, 0.3)"
-                      }`,
+                      border: sessionState?.authenticated
+                        ? "1px solid rgba(16, 185, 129, 0.25)"
+                        : "1px solid rgba(245, 158, 11, 0.25)",
+                      fontSize: "0.75rem",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                       <span
+                        className="material-symbols-outlined"
                         style={{
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "50%",
-                          backgroundColor: sessionState?.authenticated ? "#10b981" : "#f59e0b",
+                          fontSize: "14px",
+                          color: sessionState?.authenticated ? "#10b981" : "#f59e0b",
                         }}
-                      />
-                      <span
-                        className="font-headline-sm"
+                      >
+                        {sessionState?.authenticated ? "verified_user" : "gpp_maybe"}
+                      </span>
+                      <strong
                         style={{
-                          fontSize: "0.78rem",
-                          fontWeight: 600,
                           color: sessionState?.authenticated ? "#10b981" : "#f59e0b",
                         }}
                       >
                         {sessionState?.authenticated
                           ? "SIWE Oturumu Aktif"
-                          : "Salt Cüzdan (SIWE Yok)"}
-                      </span>
+                          : "SIWE Oturumu Yok"}
+                      </strong>
                     </div>
-
-                    {sessionState?.authenticated ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          if (onLogout) onLogout();
-                        }}
-                        style={{
-                          marginTop: "0.5rem",
-                          width: "100%",
-                          padding: "0.35rem 0.5rem",
-                          fontSize: "0.75rem",
-                          backgroundColor: "rgba(239, 68, 68, 0.15)",
-                          color: "#f87171",
-                          border: "1px solid rgba(239, 68, 68, 0.3)",
-                          borderRadius: "0.375rem",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        SIWE Oturumunu Kapat (Logout)
-                      </button>
-                    ) : (
+                    {!sessionState?.authenticated && (
                       <button
                         type="button"
                         onClick={handleQuickSiweLogin}
                         disabled={siweLoading}
                         style={{
-                          marginTop: "0.5rem",
+                          marginTop: "0.4rem",
                           width: "100%",
                           padding: "0.35rem 0.5rem",
-                          fontSize: "0.75rem",
-                          backgroundColor: "var(--stitch-primary)",
-                          color: "var(--stitch-on-primary)",
-                          border: "none",
                           borderRadius: "0.375rem",
+                          backgroundColor: "var(--stitch-primary)",
+                          color: "#ffffff",
+                          border: "none",
                           cursor: "pointer",
+                          fontSize: "0.75rem",
                           fontWeight: 600,
                         }}
                       >
-                        {siweLoading ? "İmza Bekleniyor..." : "SIWE ile Giriş Yap"}
+                        {siweLoading ? "İmzalanıyor..." : "Oturum Aç (SIWE İmzala)"}
                       </button>
                     )}
                   </div>
 
+                  {/* SIWE Oturumu Kapat */}
+                  {sessionState?.authenticated && onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        onLogout();
+                      }}
+                      style={{
+                        padding: "0.4rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        backgroundColor: "rgba(239, 68, 68, 0.1)",
+                        color: "#ef4444",
+                        border: "1px solid rgba(239, 68, 68, 0.25)",
+                        cursor: "pointer",
+                        fontSize: "0.8rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.4rem",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                        logout
+                      </span>
+                      Oturumu Kapat (SIWE)
+                    </button>
+                  )}
+
                   <div style={{ height: "1px", backgroundColor: "rgba(142, 144, 161, 0.2)" }} />
 
-                  {/* Hızlı Rota Bağlantıları */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  {/* Hızlı Bağlantılar */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
                     <Link
                       to="/profile"
                       onClick={() => setAccountMenuOpen(false)}
@@ -578,6 +564,26 @@ export default function Navbar({
                         dashboard
                       </span>
                       Organizatör Paneli
+                    </Link>
+
+                    <Link
+                      to="/settings"
+                      onClick={() => setAccountMenuOpen(false)}
+                      style={{
+                        padding: "0.4rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        color: "var(--stitch-on-surface)",
+                        textDecoration: "none",
+                        fontSize: "0.82rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                        settings
+                      </span>
+                      Hesap ve Oturum Ayarları
                     </Link>
                   </div>
 
@@ -619,14 +625,17 @@ export default function Navbar({
             <button
               type="button"
               className="stitch-btn-primary"
-              style={{ padding: "0.45rem 1rem", fontSize: "0.88rem" }}
               onClick={onConnectWallet}
               disabled={isConnecting}
+              style={{
+                fontSize: "0.8125rem",
+                padding: "0.45rem 1rem",
+              }}
             >
               <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
                 account_balance_wallet
               </span>
-              <span>{isConnecting ? "Bağlanıyor..." : "Cüzdan Bağla"}</span>
+              {isConnecting ? "Bağlanıyor..." : "Cüzdanı Bağla"}
             </button>
           )}
         </div>
