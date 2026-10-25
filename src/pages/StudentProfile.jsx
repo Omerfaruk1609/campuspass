@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import CertificateModal from "../components/CertificateModal";
@@ -98,11 +99,28 @@ export default function StudentProfile({
   isConnecting,
   onNavigateToCommunity,
   onExploreCommunities,
+  defaultTab = "events",
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const initialTab =
+    location?.pathname === "/profile/certificates"
+      ? "certs"
+      : defaultTab || "events";
+
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [loading, setLoading] = useState(() => Boolean(account));
   const [rpcError, setRpcError] = useState(null);
-  const [activeProfileTab, setActiveProfileTab] = useState("events"); // events | certs | timeline | communities
+  const [activeProfileTab, setActiveProfileTab] = useState(initialTab);
+
+  useEffect(() => {
+    if (location?.pathname === "/profile/certificates") {
+      setActiveProfileTab("certs");
+    } else if (location?.pathname === "/profile") {
+      setActiveProfileTab((prev) => (prev === "certs" ? "events" : prev));
+    }
+  }, [location?.pathname]); // events | certs | timeline | communities
   const [sectionFilter, setSectionFilter] = useState("all"); // all | upcoming | attended | past
   const [timelineDirection, setTimelineDirection] = useState("DESC");
 
@@ -629,7 +647,7 @@ export default function StudentProfile({
                 <button
                   type="button"
                   className={activeProfileTab === "events" ? "stitch-btn-primary" : "stitch-btn-secondary"}
-                  onClick={() => setActiveProfileTab("events")}
+                  onClick={() => { setActiveProfileTab("events"); if (navigate && location?.pathname === "/profile/certificates") navigate("/profile"); }}
                   style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
@@ -641,7 +659,7 @@ export default function StudentProfile({
                 <button
                   type="button"
                   className={activeProfileTab === "certs" ? "stitch-btn-primary" : "stitch-btn-secondary"}
-                  onClick={() => setActiveProfileTab("certs")}
+                  onClick={() => { setActiveProfileTab("certs"); if (navigate && location?.pathname !== "/profile/certificates") navigate("/profile/certificates"); }}
                   style={{ fontSize: "0.875rem", padding: "0.5rem 1rem" }}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
@@ -800,7 +818,7 @@ export default function StudentProfile({
                               <button
                                 type="button"
                                 className="stitch-btn-primary"
-                                onClick={() => onSelectEvent(ev.id)}
+                                onClick={() => (onSelectEvent ? onSelectEvent(ev.id) : (navigate && navigate(`/events/${ev.id}`)))}
                                 style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem" }}
                               >
                                 {isVerifiedAttended ? "Etkinlik Detayını Gör" : "Detay & QR Katılım Kodu"}

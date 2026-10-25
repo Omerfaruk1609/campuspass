@@ -1,7 +1,5 @@
-import {
-  MONAD_CHAIN_ID,
-  shortenAddress,
-} from "../data/events";
+import { Link, NavLink } from "react-router-dom";
+import { MONAD_CHAIN_ID, shortenAddress } from "../data/events";
 
 export default function Navbar({
   account,
@@ -40,12 +38,17 @@ export default function Navbar({
         }}
       >
         {/* Brand / Logo */}
-        <div
-          style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", shrink: 0 }}
-          onClick={() => onSelectTab("home")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && onSelectTab("home")}
+        <Link
+          to="/"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            cursor: "pointer",
+            shrink: 0,
+            textDecoration: "none",
+          }}
+          onClick={() => onSelectTab && onSelectTab("home")}
         >
           <div
             style={{
@@ -67,7 +70,7 @@ export default function Navbar({
           <span className="font-headline-md" style={{ color: "var(--stitch-on-surface)", fontWeight: 700 }}>
             Campus<span style={{ color: "var(--stitch-primary)" }}>Pass</span>
           </span>
-        </div>
+        </Link>
 
         {/* Desktop Navigation Tabs */}
         <nav
@@ -82,130 +85,148 @@ export default function Navbar({
           }}
           className="stitch-nav-tabs"
         >
-          <button
-            type="button"
+          <NavLink
+            to="/"
+            end
             className="font-headline-sm"
-            style={{
-              padding: "0.35rem 0.85rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "home" ? "var(--stitch-surface-container-high)" : "transparent",
-              color: activeTab === "home" ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-              fontWeight: activeTab === "home" ? 600 : 500,
+            style={({ isActive }) => {
+              const active = isActive || activeTab === "home";
+              return {
+                padding: "0.35rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
+                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
+                fontWeight: active ? 600 : 500,
+              };
             }}
-            onClick={() => onSelectTab("home")}
+            onClick={() => onSelectTab && onSelectTab("home")}
           >
             Ana Sayfa
-          </button>
+          </NavLink>
 
-          <button
-            type="button"
+          <NavLink
+            to="/events"
             className="font-headline-sm"
-            style={{
-              padding: "0.35rem 0.85rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "all" ? "var(--stitch-surface-container-high)" : "transparent",
-              color: activeTab === "all" ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-              fontWeight: activeTab === "all" ? 600 : 500,
+            style={({ isActive }) => {
+              const active = isActive || activeTab === "all";
+              return {
+                padding: "0.35rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
+                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
+                fontWeight: active ? 600 : 500,
+              };
             }}
-            onClick={() => onSelectTab("all")}
+            onClick={() => onSelectTab && onSelectTab("all")}
           >
             Etkinlikler
-          </button>
+          </NavLink>
 
-          <button
-            type="button"
+          <NavLink
+            to="/communities"
             className="font-headline-sm"
-            style={{
-              padding: "0.35rem 0.85rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor:
+            style={({ isActive }) => {
+              const active =
+                isActive ||
                 activeTab === "communities" ||
                 activeTab === "community-profile" ||
-                activeTab === "community-manage"
-                  ? "var(--stitch-surface-container-high)"
-                  : "transparent",
-              color:
-                activeTab === "communities" ||
-                activeTab === "community-profile" ||
-                activeTab === "community-manage"
-                  ? "var(--stitch-primary)"
-                  : "var(--stitch-on-surface-variant)",
-              fontWeight:
-                activeTab === "communities" ||
-                activeTab === "community-profile" ||
-                activeTab === "community-manage"
-                  ? 600
-                  : 500,
+                activeTab === "community-manage";
+              return {
+                padding: "0.35rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
+                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
+                fontWeight: active ? 600 : 500,
+              };
             }}
-            onClick={() => onSelectTab("communities")}
+            onClick={() => onSelectTab && onSelectTab("communities")}
           >
             Topluluklar
-          </button>
+          </NavLink>
 
-          <button
-            type="button"
+          <NavLink
+            to="/profile"
             className="font-headline-sm"
-            style={{
-              padding: "0.35rem 0.85rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "student" ? "var(--stitch-surface-container-high)" : "transparent",
-              color: activeTab === "student" ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-              fontWeight: activeTab === "student" ? 600 : 500,
+            style={({ isActive }) => {
+              const active = isActive || activeTab === "student";
+              return {
+                padding: "0.35rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
+                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
+                fontWeight: active ? 600 : 500,
+              };
             }}
-            onClick={() => onSelectTab("student")}
+            onClick={() => onSelectTab && onSelectTab("student")}
           >
             Öğrenci Panelim
-          </button>
+          </NavLink>
 
-          <button
-            type="button"
+          <NavLink
+            to="/verify"
             className="font-headline-sm"
-            style={{
-              padding: "0.35rem 0.85rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "verify" ? "var(--stitch-surface-container-high)" : "transparent",
-              color: activeTab === "verify" ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
-              fontWeight: activeTab === "verify" ? 600 : 500,
+            style={({ isActive }) => {
+              const active = isActive || activeTab === "verify";
+              return {
+                padding: "0.35rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active ? "var(--stitch-surface-container-high)" : "transparent",
+                color: active ? "var(--stitch-primary)" : "var(--stitch-on-surface-variant)",
+                fontWeight: active ? 600 : 500,
+              };
             }}
-            onClick={() => onSelectTab("verify")}
+            onClick={() => onSelectTab && onSelectTab("verify")}
           >
             Sertifika Doğrula
-          </button>
+          </NavLink>
 
-          <button
-            type="button"
+          <NavLink
+            to="/organizer"
             className="font-label-badge"
-            style={{
-              marginLeft: "0.25rem",
-              padding: "0.35rem 0.75rem",
-              borderRadius: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "organizer" ? "var(--stitch-secondary-container)" : "var(--stitch-surface-container-high)",
-              color: activeTab === "organizer" ? "var(--stitch-on-secondary-container)" : "var(--stitch-secondary)",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
+            style={({ isActive }) => {
+              const active = isActive || activeTab === "organizer";
+              return {
+                marginLeft: "0.25rem",
+                padding: "0.35rem 0.75rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: active
+                  ? "var(--stitch-secondary-container)"
+                  : "var(--stitch-surface-container-high)",
+                color: active
+                  ? "var(--stitch-on-secondary-container)"
+                  : "var(--stitch-secondary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              };
             }}
-            onClick={() => onSelectTab("organizer")}
+            onClick={() => onSelectTab && onSelectTab("organizer")}
           >
             Organizatör Paneli
-          </button>
+          </NavLink>
         </nav>
 
         {/* Right Controls: Network pill, Contract link, Wallet connect */}
@@ -256,7 +277,8 @@ export default function Navbar({
 
           {/* Connected Wallet Pill or Connect Button */}
           {account ? (
-            <div
+            <Link
+              to="/profile"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -266,8 +288,9 @@ export default function Navbar({
                 backgroundColor: "var(--stitch-surface-container)",
                 border: "1px solid rgba(185, 195, 255, 0.2)",
                 cursor: "pointer",
+                textDecoration: "none",
               }}
-              onClick={() => onSelectTab("student")}
+              onClick={() => onSelectTab && onSelectTab("student")}
               title={`Bağlı Cüzdan: ${account} (Öğrenci Profiline Git)`}
             >
               <div
@@ -289,7 +312,7 @@ export default function Navbar({
               <span className="font-label-mono" style={{ color: "var(--stitch-on-surface)", fontSize: "0.82rem" }}>
                 {shortenAddress(account)}
               </span>
-            </div>
+            </Link>
           ) : (
             <button
               type="button"
@@ -298,7 +321,9 @@ export default function Navbar({
               onClick={onConnectWallet}
               disabled={isConnecting}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>account_balance_wallet</span>
+              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                account_balance_wallet
+              </span>
               <span>{isConnecting ? "Bağlanıyor..." : "Cüzdan Bağla"}</span>
             </button>
           )}

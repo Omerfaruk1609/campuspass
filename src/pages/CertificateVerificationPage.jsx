@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { CONTRACT_ADDRESS, MONAD_CHAIN_ID, MONAD_EXPLORER_URL } from "../data/events.js";
 import { fetchCertificateVerificationFromBackend } from "../utils/apiClient.js";
@@ -43,11 +44,14 @@ export default function CertificateVerificationPage({
   initialCertificateId = "",
   onBackToEvents,
 }) {
+  const navigate = useNavigate();
+  const params = useParams();
+  const effectiveId = params.certificateId || initialCertificateId || "";
   const [inputCertId, setInputCertId] = useState(
-    String(initialCertificateId || "").trim().toUpperCase()
+    String(effectiveId || "").trim().toUpperCase()
   );
   const [activeCertId, setActiveCertId] = useState(
-    String(initialCertificateId || "").trim().toUpperCase()
+    String(effectiveId || "").trim().toUpperCase()
   );
   const [verificationResult, setVerificationResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -120,14 +124,18 @@ export default function CertificateVerificationPage({
   }, []);
 
   useEffect(() => {
-    const normalized = String(initialCertificateId || "").trim().toUpperCase();
+    const normalized = String(effectiveId || "").trim().toUpperCase();
+    setInputCertId(normalized);
+    setActiveCertId(normalized);
     async function initVerification() {
       if (normalized) {
         await runVerification(normalized);
+      } else {
+        setVerificationResult(null);
       }
     }
     initVerification();
-  }, [initialCertificateId, runVerification]);
+  }, [effectiveId, runVerification]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -137,9 +145,7 @@ export default function CertificateVerificationPage({
       return;
     }
     setActiveCertId(trimmed);
-    if (typeof window !== "undefined" && window.history?.pushState) {
-      window.history.pushState({}, "", `/verify/${encodeURIComponent(trimmed)}`);
-    }
+    navigate(`/verify/${encodeURIComponent(trimmed)}`);
     runVerification(trimmed);
   };
 
@@ -184,7 +190,7 @@ export default function CertificateVerificationPage({
             <button
               type="button"
               className="verify-back-btn"
-              onClick={onBackToEvents}
+              onClick={onBackToEvents || (() => navigate("/events"))}
             >
               ← Etkinliklere Dön
             </button>

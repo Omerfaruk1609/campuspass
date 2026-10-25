@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import EventCard from "../components/EventCard";
 import {
@@ -9,13 +10,20 @@ import {
 import { shortenAddress } from "../data/events";
 
 export default function CommunityProfilePage({
-  slug,
+  slug: propSlug,
   account,
   onBack,
   onSelectEvent,
   onManageCommunity,
   onConnectWallet,
 }) {
+  const params = useParams();
+  const navigate = useNavigate();
+
+  const slug = propSlug ?? params.slug;
+  const handleBack = onBack || (() => (navigate ? navigate("/communities") : null));
+  const handleManage = onManageCommunity || ((s) => (navigate ? navigate(`/communities/${s}/manage`) : null));
+  const handleSelectEvent = onSelectEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [community, setCommunity] = useState(null);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,7 +111,7 @@ export default function CommunityProfilePage({
     return (
       <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
         <div className="stitch-container">
-          <button type="button" className="stitch-btn-secondary" onClick={onBack}>
+          <button type="button" className="stitch-btn-secondary" onClick={handleBack}>
             ← Topluluklara Dön
           </button>
           <div className="stitch-card" style={{ padding: "3rem", textAlign: "center", marginTop: "2rem", color: "var(--stitch-error)" }}>
@@ -138,7 +146,7 @@ export default function CommunityProfilePage({
       <div className="stitch-container" style={{ position: "relative", zIndex: 1, paddingTop: "1.5rem" }}>
         {/* Üst Gezinme */}
         <div style={{ marginBottom: "1.5rem" }}>
-          <button type="button" className="stitch-btn-secondary" onClick={onBack} style={{ fontSize: "0.875rem" }}>
+          <button type="button" className="stitch-btn-secondary" onClick={handleBack} style={{ fontSize: "0.875rem" }}>
             ← Tüm Topluluklara Dön
           </button>
         </div>
@@ -259,7 +267,7 @@ export default function CommunityProfilePage({
                 <button
                   type="button"
                   className="stitch-btn-secondary"
-                  onClick={() => onManageCommunity && onManageCommunity(community.slug || community.id)}
+                  onClick={() => handleManage(community.slug || community.id)}
                   style={{ fontSize: "0.875rem", padding: "0.625rem 1.25rem" }}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
@@ -416,7 +424,7 @@ export default function CommunityProfilePage({
                     key={event.id}
                     event={event}
                     account={account}
-                    onSelectEvent={onSelectEvent}
+                    onSelectEvent={handleSelectEvent}
                     onQuickRegister={() => onSelectEvent(event.id)}
                     registeringId={null}
                   />

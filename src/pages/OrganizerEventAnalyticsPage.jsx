@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import {
@@ -15,11 +16,17 @@ import {
 import { formatTurkeyDateOnly, formatTurkeyDateTime } from "../utils/eventMetadata";
 
 export default function OrganizerEventAnalyticsPage({
-  eventId,
+  eventId: propEventId,
   account,
   onBack,
   onOpenEventPage,
 }) {
+  const params = useParams();
+  const navigate = useNavigate();
+
+  const eventId = propEventId ?? (params.eventId ? Number(params.eventId) : null);
+  const handleBack = onBack || (() => (navigate ? navigate("/organizer") : null));
+  const handleOpenEvent = onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [eventData, setEventData] = useState(null);
@@ -178,7 +185,7 @@ export default function OrganizerEventAnalyticsPage({
     return (
       <div className="page-container">
         <section className="card-panel">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleBack}>
             ← Organizatör Paneline Dön
           </button>
           <div className="empty-state" style={{ marginTop: "1rem" }}>
@@ -206,7 +213,7 @@ export default function OrganizerEventAnalyticsPage({
     return (
       <div className="page-container">
         <section className="card-panel">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleBack}>
             ← Organizatör Paneline Dön
           </button>
           <div className="inline-alert error" style={{ marginTop: "1rem" }}>
@@ -237,11 +244,11 @@ export default function OrganizerEventAnalyticsPage({
           ← Organizatör Paneline Dön
         </button>
         <div className="analytics-top-actions">
-          {onOpenEventPage && (
+          {handleOpenEvent && (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => onOpenEventPage(eventId)}
+              onClick={() => handleOpenEvent(eventId)}
             >
               Etkinlik Sayfasını Aç ↗
             </button>

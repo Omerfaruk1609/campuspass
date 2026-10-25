@@ -1,4 +1,4 @@
-import { shortenAddress } from "../data/events";
+import { Link } from "react-router-dom";
 import { formatTurkeyDateOnly } from "../utils/eventMetadata";
 
 export default function EventCard({
@@ -10,7 +10,7 @@ export default function EventCard({
 }) {
   const isOrganizer =
     account && event.organizer && event.organizer.toLowerCase() === account.toLowerCase();
-  const isFull = event.registeredCount >= event.capacity;
+  const isFull = event.capacity > 0 && event.registeredCount >= event.capacity;
   const fillPercent =
     event.capacity > 0
       ? Math.min(100, Math.round((event.registeredCount / event.capacity) * 100))
@@ -28,6 +28,12 @@ export default function EventCard({
       ? event.community.charAt(0).toUpperCase()
       : "C";
 
+  const handleSelect = () => {
+    if (onSelectEvent) {
+      onSelectEvent(event.id);
+    }
+  };
+
   return (
     <article
       className={`event-card stitch-card ${event.status === "cancelled" ? "is-cancelled" : ""}`}
@@ -39,19 +45,19 @@ export default function EventCard({
       }}
     >
       {/* Afiş / Kapak Alanı — 16:9 Oranında Stitch Görsel Alanı */}
-      <div
+      <Link
+        to={`/events/${event.id}`}
         className="event-poster-banner"
-        onClick={() => onSelectEvent(event.id)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onSelectEvent(event.id)}
+        onClick={handleSelect}
         style={{
+          display: "block",
           position: "relative",
           width: "100%",
           paddingTop: "52%",
           cursor: "pointer",
           overflow: "hidden",
           backgroundColor: "var(--stitch-surface-container-lowest)",
+          textDecoration: "none",
         }}
       >
         {event.posterUrl ? (
@@ -102,20 +108,8 @@ export default function EventCard({
           </div>
         )}
 
-        {/* Gradient Karartma Katmanı */}
+        {/* Canlı Kategori / Durum Rozetleri */}
         <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(to top, rgba(3, 18, 46, 0.95) 0%, rgba(3, 18, 46, 0.4) 60%, transparent 100%)",
-            pointerEvents: "none",
-          }}
-        />
-
-        {/* Üst Rozetler */}
-        <div
-          className="poster-overlay-badges"
           style={{
             position: "absolute",
             top: "0.75rem",
@@ -125,24 +119,27 @@ export default function EventCard({
             justifyContent: "space-between",
             alignItems: "center",
             zIndex: 2,
+            gap: "0.5rem",
           }}
         >
           <span
-            className="category-pill stitch-badge stitch-badge-testnet"
+            className="stitch-badge"
             style={{
-              backdropFilter: "blur(8px)",
-              backgroundColor: "rgba(12, 27, 54, 0.8)",
+              backgroundColor: "rgba(3, 18, 46, 0.85)",
+              color: "var(--stitch-primary)",
+              border: "1px solid rgba(111, 136, 255, 0.3)",
+              backdropFilter: "blur(6px)",
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>
-              loyalty
-            </span>
             {event.category}
           </span>
 
           <span
-            className={`status-badge stitch-badge ${statusClassMap[event.status] || "stitch-badge-open"}`}
-            style={{ backdropFilter: "blur(8px)" }}
+            className={`stitch-badge ${statusClassMap[event.status] || "stitch-badge-testnet"}`}
+            style={{
+              boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+              backdropFilter: "blur(6px)",
+            }}
           >
             {event.statusLabel}
           </span>
@@ -178,7 +175,7 @@ export default function EventCard({
             {formatTurkeyDateOnly(event.date)}
           </span>
         </div>
-      </div>
+      </Link>
 
       {/* Kart Gövdesi */}
       <div
@@ -252,108 +249,128 @@ export default function EventCard({
         </div>
 
         {/* Başlık */}
-        <h3
-          className="event-title font-headline-sm"
-          onClick={() => onSelectEvent(event.id)}
-          style={{
-            cursor: "pointer",
-            color: "var(--stitch-on-surface)",
-            margin: 0,
-            lineHeight: 1.35,
-          }}
+        <Link
+          to={`/events/${event.id}`}
+          onClick={handleSelect}
+          style={{ textDecoration: "none", color: "inherit" }}
         >
-          {event.title}
-        </h3>
+          <h3
+            className="event-title font-headline-sm"
+            style={{
+              cursor: "pointer",
+              color: "var(--stitch-on-surface)",
+              margin: 0,
+              lineHeight: 1.3,
+            }}
+          >
+            {event.title}
+          </h3>
+        </Link>
 
-        {/* Kısa Açıklama */}
+        {/* Açıklama */}
         <p
-          className="event-desc-preview font-body-sm text-on-surface-variant"
+          className="event-description font-body-sm text-on-surface-variant"
           style={{
             margin: 0,
             display: "-webkit-box",
             WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
+            lineHeight: 1.5,
           }}
         >
-          {event.description}
+          {event.description || "Kampüs etkinliği detayları."}
         </p>
 
-        {/* Meta Bilgileri */}
+        {/* Konum & Saat */}
         <div
-          className="event-meta"
+          className="event-location-row"
           style={{
             display: "flex",
-            flexDirection: "column",
-            gap: "0.375rem",
+            alignItems: "center",
+            gap: "0.75rem",
             fontSize: "0.8125rem",
             color: "var(--stitch-on-surface-variant)",
             marginTop: "auto",
+            paddingTop: "0.5rem",
           }}
         >
-          <div className="meta-row" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
             <span
               className="material-symbols-outlined"
-              style={{ fontSize: "15px", color: "var(--stitch-tertiary)" }}
+              style={{ fontSize: "16px", color: "var(--stitch-tertiary)" }}
             >
               schedule
             </span>
-            <span className="meta-value">
-              {event.startTime} - {event.endTime} (TSİ)
+            <span>
+              {event.startTime} - {event.endTime}
             </span>
           </div>
 
-          <div className="meta-row" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
             <span
               className="material-symbols-outlined"
-              style={{ fontSize: "15px", color: "var(--stitch-primary)" }}
+              style={{ fontSize: "16px", color: "var(--stitch-primary)" }}
             >
               location_on
             </span>
-            <span className="meta-value" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {event.location?.campus} / {event.location?.building} ({event.location?.room})
-            </span>
-          </div>
-
-          <div className="meta-row" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <span
-              className="material-symbols-outlined"
-              style={{ fontSize: "15px", color: "var(--stitch-outline)" }}
+              style={{
+                maxWidth: "140px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={`${event.location?.campus || "Merkez"} • ${event.location?.room || ""}`}
             >
-              person
+              {event.location?.room || event.location?.building || "Kampüs İçi"}
             </span>
-            <span className="meta-value font-label-mono monospace" title={event.organizer}>
-              {shortenAddress(event.organizer)}
+          </div>
+        </div>
+
+        {/* Katılımcı Kapasite İlerleme Çubuğu */}
+        <div
+          className="capacity-block"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.25rem",
+            paddingTop: "0.5rem",
+            borderTop: "1px solid rgba(142, 144, 161, 0.12)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.75rem",
+            }}
+          >
+            <span className="text-on-surface-variant">Kontenjan Durumu</span>
+            <span className="font-label-mono text-outline">
+              {event.registeredCount} / {event.capacity} ({fillPercent}%)
             </span>
           </div>
 
-          {/* Kontenjan ve Doluluk */}
-          <div style={{ marginTop: "0.5rem" }}>
+          <div
+            className="stitch-progress-bar"
+            style={{
+              height: "6px",
+              backgroundColor: "rgba(142, 144, 161, 0.15)",
+              borderRadius: "3px",
+              overflow: "hidden",
+            }}
+          >
             <div
+              className="stitch-progress-fill"
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "0.35rem",
-                fontSize: "0.75rem",
+                width: `${fillPercent}%`,
+                height: "100%",
+                backgroundColor: isFull ? "var(--stitch-error)" : "var(--stitch-primary)",
+                transition: "width 0.3s ease",
               }}
-            >
-              <span>
-                Kontenjan: <strong>{event.registeredCount}</strong> / {event.capacity}
-              </span>
-              <span style={{ color: isFull ? "var(--stitch-error)" : "var(--stitch-tertiary)" }}>
-                %{fillPercent} {isFull ? "• Dolu" : ""}
-              </span>
-            </div>
-            <div className="stitch-progress-track">
-              <div
-                className="stitch-progress-fill"
-                style={{
-                  width: `${fillPercent}%`,
-                  backgroundColor: isFull ? "var(--stitch-error)" : undefined,
-                }}
-              />
-            </div>
+            />
           </div>
         </div>
       </div>
@@ -367,16 +384,25 @@ export default function EventCard({
           gap: "0.5rem",
         }}
       >
-        <button
-          type="button"
+        <Link
+          to={`/events/${event.id}`}
           className="stitch-btn-secondary"
-          onClick={() => onSelectEvent(event.id)}
-          style={{ flex: 1, padding: "0.5rem", fontSize: "0.875rem" }}
+          onClick={handleSelect}
+          style={{
+            flex: 1,
+            padding: "0.5rem",
+            fontSize: "0.875rem",
+            textDecoration: "none",
+            textAlign: "center",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
           Detay &amp; İşlemler
-        </button>
+        </Link>
 
-        {!event.isRegistered && event.canRegisterByTime && !isFull ? (
+        {!event.isRegistered && event.canRegisterByTime && !isFull && onQuickRegister ? (
           <button
             type="button"
             className="stitch-btn-primary"

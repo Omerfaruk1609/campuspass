@@ -1,3 +1,5 @@
+import { useNavigate, useParams } from "react-router-dom";
+import { useAppContext } from "../context/AppContext";
 import { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
@@ -69,16 +71,22 @@ function toDatetimeLocalValue(isoString) {
   return match ? match[1] : "";
 }
 
-export default function EventPage({
-  event,
-  account,
-  chainId,
-  onBack,
-  onRegisterEvent,
-  onMarkAttendance,
-  onUpdateMetadata,
-  txState,
-}) {
+export default function EventPage(props) {
+  const context = useAppContext();
+  const params = useParams();
+  const navigate = useNavigate();
+
+  const account = props.account ?? context?.account ?? null;
+  const chainId = props.chainId ?? context?.chainId ?? null;
+  const txState = props.txState ?? context?.txState ?? { busy: false, type: null, targetId: null };
+  const onRegisterEvent = props.onRegisterEvent ?? context?.handleRegisterEvent;
+  const onMarkAttendance = props.onMarkAttendance ?? context?.handleMarkAttendance;
+  const onUpdateMetadata = props.onUpdateMetadata ?? context?.handleUpdateEventMetadata;
+  const onBack = props.onBack || (() => (navigate ? navigate("/events") : null));
+
+  const targetEventId = props.event ? props.event.id : (params.eventId ? Number(params.eventId) : null);
+  const event = props.event ?? (context?.events ? context.events.find((e) => e.id === targetEventId) : null);
+  const loadingEvents = context?.loadingEvents ?? false;
   // Öğrenci QR State
   const [qrTicket, setQrTicket] = useState(null);
   const [qrGenerating, setQrGenerating] = useState(false);
@@ -199,6 +207,21 @@ export default function EventPage({
     } catch (err) {
       setCameraError("Kamera açılamadı: " + (err.message || "İzin verilmedi."));
     }
+  }
+
+  if (loadingEvents && !event) {
+    return (
+      <div className="stitch-shell page-container" style={{ padding: "5rem 1rem", textAlign: "center" }}>
+        <div className="stitch-container">
+          <span className="material-symbols-outlined pulse-glow" style={{ fontSize: "40px", color: "var(--stitch-primary)" }}>
+            sync
+          </span>
+          <p className="font-body-md text-on-surface-variant" style={{ marginTop: "1rem" }}>
+            Etkinlik detayları yükleniyor...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (!event) {
