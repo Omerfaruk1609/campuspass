@@ -19,6 +19,14 @@ import {
 import { AppProvider, useAppContext } from "../src/context/AppContext.jsx";
 import RootLayout from "../src/layouts/RootLayout.jsx";
 import Navbar from "../src/components/Navbar.jsx";
+import StudentProfile from "../src/pages/StudentProfile.jsx";
+import OrganizerDashboardPage from "../src/pages/OrganizerDashboardPage.jsx";
+import OrganizerEventAnalyticsPage from "../src/pages/OrganizerEventAnalyticsPage.jsx";
+import CommunityDiscoveryPage from "../src/pages/CommunityDiscoveryPage.jsx";
+import CommunityProfilePage from "../src/pages/CommunityProfilePage.jsx";
+import EventPage from "../src/pages/EventPage.jsx";
+import ProtectedRoute from "../src/components/guards/ProtectedRoute.jsx";
+import OrganizerGuard from "../src/components/guards/OrganizerGuard.jsx";
 
 const el = React.createElement;
 
@@ -183,6 +191,175 @@ describe("Faz 15 — Blokzincir Olay Okuma ve Cüzdan/SIWE Yaşam Döngüsü Reg
 
       expect(html).to.include("Campus");
       expect(html).to.include("Pass");
+    });
+  });
+
+  describe("3. Rotalar Arası Cüzdan ve Oturum Durumu Tutarlılığı (Sayfa Durum Regresyonları)", function () {
+    const testWallet = "0x70761Cd6ff53fa54408f1497f0E5FF9E56794dC5";
+    const testSampleEvent = {
+      id: 1,
+      title: "Monad Blokzincir Hackathonu",
+      community: "Monad TR",
+      category: "Blockchain",
+      capacity: 100,
+      registeredCount: 42,
+      organizer: "0x70761Cd6ff53fa54408f1497f0E5FF9E56794dC5",
+      isRegistered: true,
+      isAttended: false,
+      date: "2026-11-20",
+      startTime: "10:00",
+      endTime: "18:00",
+      registrationDeadline: "2026-11-19T23:59",
+      location: { campus: "Merkez", building: "Mühendislik", room: "A-101" },
+      status: "upcoming",
+      statusLabel: "Kayıtlar Açık",
+      deadlinePassed: false,
+      canRegisterByTime: true,
+    };
+
+    it("3.1 StudentProfile prop almadan AppProvider context'indeki cüzdanı tüketmeli ve bağlı görünüm render etmeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/profile"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialSessionState: { authenticated: true, walletAddress: testWallet, loading: false },
+              initialLoadingEvents: false,
+            },
+            el(ProtectedRoute, null, el(StudentProfile, { defaultTab: "events" }))
+          )
+        )
+      );
+
+      // Cüzdan bağlı değil ekranı OLMAMALI
+      expect(html).to.not.include("Profili Görmek İçin Cüzdan Bağla");
+      expect(html).to.not.include("Kayıtlı Etkinliklerinizi ve Sertifikalarınızı Görüntüleyin");
+      // Cüzdan bağlı olduğu için bağlı cüzdan kimliği ve rozetleri görünmeli
+      expect(html).to.include("0x7076...4dC5");
+      expect(html).to.include("Cüzdan Doğrulandı ✓");
+    });
+
+    it("3.2 OrganizerDashboardPage prop almadan context'teki hesabı tüketmeli ve 'Organizatör Cüzdanını Bağla' yerine dashboard render etmeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialSessionState: { authenticated: true, walletAddress: testWallet, loading: false },
+              initialLoadingEvents: false,
+            },
+            el(OrganizerGuard, null, el(OrganizerDashboardPage))
+          )
+        )
+      );
+
+      // Cüzdan bağlı değil promptu OLMAMALI
+      expect(html).to.not.include("Organizatör Cüzdanını Bağla");
+      expect(html).to.include("Monad Testnet ve veritabanı analitikleri yükleniyor...");
+    });
+
+    it("3.3 OrganizerEventAnalyticsPage prop almadan context'teki hesabı tüketmeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer/events/1"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialSessionState: { authenticated: true, walletAddress: testWallet, loading: false },
+              initialEvents: [testSampleEvent],
+              initialLoadingEvents: false,
+            },
+            el(
+              OrganizerGuard,
+              { requireEventOrganizer: true },
+              el(OrganizerEventAnalyticsPage, { eventId: 1 })
+            )
+          )
+        )
+      );
+
+      // Cüzdan bağlantısı gerekli ekranı OLMAMALI
+      expect(html).to.not.include("Cüzdan Bağlantısı Gerekli");
+      expect(html).to.include("Etkinlik analitiği ve blokzincir kayıtları yükleniyor...");
+    });
+
+    it("3.4 EventPage prop almadan context'teki cüzdanı tüketmeli ve bağlı cüzdan ile durumunu göstermeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/events/1"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialSessionState: { authenticated: true, walletAddress: testWallet, loading: false },
+              initialEvents: [testSampleEvent],
+              initialLoadingEvents: false,
+            },
+            el(EventPage, { event: testSampleEvent })
+          )
+        )
+      );
+
+      expect(html).to.include("0x7076...4dC5");
+      expect(html).to.include("Organizatörsünüz");
+      expect(html).to.include("Monad Blokzincir Hackathonu");
+    });
+
+    it("3.5 CommunityDiscoveryPage ve CommunityProfilePage cüzdan bağlı durumunu context'ten tanımalı", function () {
+      const htmlDisc = renderToString(
+        el(
+          MemoryRouter,
+          null,
+          el(
+            AppProvider,
+            { initialAccount: testWallet, initialSessionState: { loading: false } },
+            el(CommunityDiscoveryPage)
+          )
+        )
+      );
+      expect(htmlDisc).to.include("Toplulukları Keşfet");
+      expect(htmlDisc).to.include("Topluluk Kur");
+
+      const htmlProf = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/communities/monad-tr"] },
+          el(
+            AppProvider,
+            { initialAccount: testWallet, initialSessionState: { loading: false } },
+            el(CommunityProfilePage, { slug: "monad-tr" })
+          )
+        )
+      );
+      // Cüzdan bağlı olduğu için "Topluluğa Katılmak İçin Cüzdan Bağla" butonunu göstermemeli
+      expect(htmlProf).to.not.include("Topluluğa Katılmak İçin Cüzdan Bağla");
+    });
+
+    it("3.6 Bileşenler doğrudan prop verildiğinde geriye dönük uyumlu çalışmalı", function () {
+      const explicitWallet = "0x1111111111111111111111111111111111111111";
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          null,
+          el(StudentProfile, {
+            account: explicitWallet,
+            chainId: 10143,
+            defaultTab: "certs",
+          })
+        )
+      );
+
+      expect(html).to.include("0x1111...1111");
+      expect(html).to.include("Sertifikalarım");
     });
   });
 });

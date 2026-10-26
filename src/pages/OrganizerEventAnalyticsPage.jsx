@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import { ethers } from "ethers";
 import {
   MONAD_CHAIN_ID,
@@ -15,18 +16,15 @@ import {
 } from "../utils/apiClient";
 import { formatTurkeyDateOnly, formatTurkeyDateTime } from "../utils/eventMetadata";
 
-export default function OrganizerEventAnalyticsPage({
-  eventId: propEventId,
-  account,
-  onBack,
-  onOpenEventPage,
-}) {
+export default function OrganizerEventAnalyticsPage(props) {
+  const context = useAppContext();
   const params = useParams();
   const navigate = useNavigate();
 
-  const eventId = propEventId ?? (params.eventId ? Number(params.eventId) : null);
-  const handleBack = onBack || (() => (navigate ? navigate("/organizer") : null));
-  const handleOpenEvent = onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const account = props.account ?? context?.account ?? null;
+  const eventId = props.eventId ?? (params.eventId ? Number(params.eventId) : null);
+  const handleBack = props.onBack || (() => (navigate ? navigate("/organizer") : null));
+  const handleOpenEvent = props.onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [eventData, setEventData] = useState(null);

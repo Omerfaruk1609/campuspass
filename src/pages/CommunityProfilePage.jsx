@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import EventCard from "../components/EventCard";
 import {
   ensureSiweSession,
@@ -10,21 +11,17 @@ import {
 } from "../utils/apiClient";
 import { shortenAddress } from "../data/events";
 
-export default function CommunityProfilePage({
-  slug: propSlug,
-  account,
-  onBack,
-  onSelectEvent,
-  onManageCommunity,
-  onConnectWallet,
-}) {
+export default function CommunityProfilePage(props) {
+  const context = useAppContext();
   const params = useParams();
   const navigate = useNavigate();
 
-  const slug = propSlug ?? params.slug;
-  const handleBack = onBack || (() => (navigate ? navigate("/communities") : null));
-  const handleManage = onManageCommunity || ((s) => (navigate ? navigate(`/communities/${s}/manage`) : null));
-  const handleSelectEvent = onSelectEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const account = props.account ?? context?.account ?? null;
+  const onConnectWallet = props.onConnectWallet ?? context?.handleConnectWallet;
+  const slug = props.slug ?? params.slug;
+  const handleBack = props.onBack || (() => (navigate ? navigate("/communities") : null));
+  const handleManage = props.onManageCommunity || ((s) => (navigate ? navigate(`/communities/${s}/manage`) : null));
+  const handleSelectEvent = props.onSelectEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [community, setCommunity] = useState(null);
   const [events, setEvents] = useState([]);
   const [announcements, setAnnouncements] = useState([]);

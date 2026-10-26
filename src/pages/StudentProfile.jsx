@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import { ethers } from "ethers";
 import CertificateModal from "../components/CertificateModal";
 import {
@@ -89,21 +90,22 @@ function QrSvgSmall({ value, size = 130 }) {
   );
 }
 
-export default function StudentProfile({
-  account,
-  chainId,
-  onConnectWallet,
-  onSwitchNetwork,
-  onSelectEvent,
-  onExploreEvents,
-  onOpenVerifyPage,
-  isConnecting,
-  onNavigateToCommunity,
-  onExploreCommunities,
-  defaultTab = "events",
-}) {
+export default function StudentProfile(props) {
+  const context = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const account = props.account ?? context?.account ?? null;
+  const chainId = props.chainId ?? context?.chainId ?? null;
+  const onConnectWallet = props.onConnectWallet ?? context?.handleConnectWallet;
+  const onSwitchNetwork = props.onSwitchNetwork ?? context?.handleSwitchNetwork;
+  const isConnecting = props.isConnecting ?? context?.isConnecting ?? false;
+  const onSelectEvent = props.onSelectEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const onExploreEvents = props.onExploreEvents || (() => (navigate ? navigate("/events") : null));
+  const onOpenVerifyPage = props.onOpenVerifyPage || ((id) => (navigate ? navigate(id ? `/verify/${id}` : "/verify") : null));
+  const onNavigateToCommunity = props.onNavigateToCommunity || ((slug) => (navigate ? navigate(`/communities/${slug}`) : null));
+  const onExploreCommunities = props.onExploreCommunities || (() => (navigate ? navigate("/communities") : null));
+  const defaultTab = props.defaultTab || "events";
 
   const initialTab =
     location?.pathname === "/profile/certificates"

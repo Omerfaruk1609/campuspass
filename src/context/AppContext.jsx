@@ -44,7 +44,7 @@ export function AppProvider({
   initialAccount = null,
   initialSessionState = null,
   initialEvents = [],
-  initialLoadingEvents = false,
+  initialLoadingEvents = true,
 }) {
   const [account, setAccount] = useState(initialAccount);
   const accountRef = useRef(initialAccount);
@@ -126,6 +126,8 @@ export function AppProvider({
 
   const loadEvents = useCallback(
     async (currentAccount) => {
+      const targetAccount =
+        currentAccount !== undefined ? currentAccount : accountRef.current;
       setLoadingEvents(true);
       try {
         let serverMetadataMap = {};
@@ -157,7 +159,7 @@ export function AppProvider({
           });
         }
 
-        computePendingItemsForAccount(currentAccount, serverMetadataMap);
+        computePendingItemsForAccount(targetAccount, serverMetadataMap);
 
         const contract = getReadOnlyContract();
         const nextIdBigInt = await contract.nextEventId();
@@ -200,10 +202,10 @@ export function AppProvider({
             let isRegistered = false;
             let isAttended = false;
 
-            if (currentAccount) {
+            if (targetAccount) {
               const [reg, att] = await Promise.all([
-                contract.registered(id, currentAccount),
-                contract.attended(id, currentAccount),
+                contract.registered(id, targetAccount),
+                contract.attended(id, targetAccount),
               ]);
               isRegistered = Boolean(reg);
               isAttended = Boolean(att);

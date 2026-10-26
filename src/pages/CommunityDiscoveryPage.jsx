@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import CommunityCard from "../components/CommunityCard";
 import {
   createCommunityOnBackend,
@@ -18,13 +19,13 @@ const COMMUNITY_CATEGORIES = [
   "Sosyal & Spor",
 ];
 
-export default function CommunityDiscoveryPage({
-  account,
-  onSelectCommunity,
-  onConnectWallet,
-}) {
+export default function CommunityDiscoveryPage(props) {
+  const context = useAppContext();
   const navigate = useNavigate();
-  const handleSelectCommunity = onSelectCommunity || ((slug) => (navigate ? navigate(`/communities/${slug}`) : null));
+
+  const account = props.account ?? context?.account ?? null;
+  const onConnectWallet = props.onConnectWallet ?? context?.handleConnectWallet;
+  const handleSelectCommunity = props.onSelectCommunity || ((slug) => (navigate ? navigate(`/communities/${slug}`) : null));
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

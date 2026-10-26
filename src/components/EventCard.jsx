@@ -28,8 +28,11 @@ export default function EventCard({
       ? event.community.charAt(0).toUpperCase()
       : "C";
 
-  const handleSelect = () => {
+  const handleSelect = (e) => {
     if (onSelectEvent) {
+      if (e && typeof e.preventDefault === "function") {
+        e.preventDefault();
+      }
       onSelectEvent(event.id);
     }
   };

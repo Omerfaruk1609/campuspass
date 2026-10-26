@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import {
   approveCommunityApplicationOnBackend,
   createCommunityAnnouncementOnBackend,
@@ -18,18 +19,15 @@ import {
 } from "../utils/apiClient";
 import { CONTRACT_ADDRESS, MONAD_CHAIN_ID, shortenAddress } from "../data/events";
 
-export default function CommunityManagePage({
-  slug: propSlug,
-  account,
-  onBack,
-  onOpenEvent,
-}) {
+export default function CommunityManagePage(props) {
+  const context = useAppContext();
   const params = useParams();
   const navigate = useNavigate();
 
-  const slug = propSlug ?? params.slug;
-  const handleBack = onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
-  const handleOpenEvent = onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const account = props.account ?? context?.account ?? null;
+  const slug = props.slug ?? params.slug;
+  const handleBack = props.onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
+  const handleOpenEvent = props.onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
