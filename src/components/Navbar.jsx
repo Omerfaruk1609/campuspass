@@ -12,6 +12,8 @@ export default function Navbar({
   sessionState = null,
   onLogout = null,
   onDisconnectWallet = null,
+  onSiweLogin = null,
+  unreadNotificationCount = 0,
 }) {
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -51,8 +53,11 @@ export default function Navbar({
     if (!account) return;
     setSiweLoading(true);
     try {
-      await ensureSiweSession(account);
-      window.location.reload();
+      if (typeof onSiweLogin === "function") {
+        await onSiweLogin();
+      } else {
+        await ensureSiweSession(account);
+      }
     } catch {
       // SIWE reddedildi veya hata
     } finally {

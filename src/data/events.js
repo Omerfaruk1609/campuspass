@@ -1,12 +1,23 @@
 import { ethers } from "ethers";
 import deployment from "./deployment.json" with { type: "json" };
 
-export const MONAD_CHAIN_ID = 10143;
-export const MONAD_CHAIN_ID_HEX = "0x279f";
-export const MONAD_RPC_URL = "https://testnet-rpc.monad.xyz";
-export const MONAD_EXPLORER_URL = "https://testnet.monadexplorer.com";
+const envChainId =
+  typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_CHAIN_ID
+    ? Number(import.meta.env.VITE_MONAD_CHAIN_ID)
+    : 10143;
 
-export const CONTRACT_ADDRESS = deployment.address;
+export const MONAD_CHAIN_ID = envChainId;
+export const MONAD_CHAIN_ID_HEX = "0x" + envChainId.toString(16);
+export const MONAD_RPC_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_RPC_URL) ||
+  "https://testnet-rpc.monad.xyz";
+export const MONAD_EXPLORER_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_EXPLORER_URL) ||
+  "https://testnet.monadexplorer.com";
+
+export const CONTRACT_ADDRESS =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_CONTRACT_ADDRESS) ||
+  deployment.address;
 
 export const CAMPUS_PASS_ABI = [
   "function nextEventId() view returns (uint256)",
@@ -117,6 +128,55 @@ export function parseBlockchainError(error) {
 
   if (rawMessage.includes("insufficient funds")) {
     return "Cüzdanınızda işlem ücretini (gas) karşılamak için yeterli Testnet MON bulunmuyor.";
+  }
+
+  // Akıllı sözleşme yokluğu, eksik deployment veya boş revert verisi
+  if (
+    rawMessage.includes("missing revert data") ||
+    rawMessage.includes("could not decode result data") ||
+    (error.code === "BAD_DATA" && String(error.value) === "0x") ||
+    (error.code === "CALL_EXCEPTION" && (!error.data || error.data === "0x"))
+  ) {
+    return "Akıllı sözleşmeye ulaşılamadı veya belirtilen adreste sözleşme kodu bulunamadı. Lütfen ağın Monad Testnet (10143) olduğunu ve sözleşme adresini kontrol edin.";
+  }
+
+  // RPC bağlantı ve ağ sunucusu erişim hataları
+  if (
+    rawMessage.includes("ENOTFOUND") ||
+    rawMessage.includes("ECONNREFUSED") ||
+    rawMessage.includes("failed to detect network") ||
+    rawMessage.includes("fetch failed") ||
+    rawMessage.includes("Failed to fetch") ||
+    error.code === "SERVER_ERROR"
+  ) {
+    return "Monad Testnet RPC sunucusuna bağlanılamadı. Lütfen internet bağlantınızı veya RPC URL'sini kontrol edin.";
+  }
+
+  // Yanlış ağ / Chain ID uyumsuzluğu
+  if (
+    rawMessage.includes("Yanlış ağdasınız") ||
+    rawMessage.includes("network mismatch") ||
+    rawMessage.includes("Chain ID")
+  ) {
+    return "Yanlış ağdasınız. Lütfen cüzdanınızdan Monad Testnet (Chain ID 10143) ağına geçin.";
+  }
+
+  // RPC rate limit veya blok sorgu aralığı sınırı
+  if (
+    rawMessage.includes("limited to a 100 range") ||
+    rawMessage.includes("rate limit") ||
+    rawMessage.includes("429")
+  ) {
+    return "Monad Testnet RPC istek veya blok aralığı sınırı aşıldı. Lütfen tekrar deneyin.";
+  }
+
+  // SIWE / Oturum yetkilendirme hataları
+  if (
+    rawMessage.includes("SESSION_REQUIRED") ||
+    rawMessage.includes("SIWE kimlik doğrulaması") ||
+    rawMessage.includes("Unauthorized")
+  ) {
+    return "SIWE oturumunuz bulunmuyor veya süresi dolmuş. Lütfen cüzdanınızla tekrar oturum açın.";
   }
 
   return rawMessage;

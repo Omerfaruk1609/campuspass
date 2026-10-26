@@ -79,6 +79,16 @@ export default function AppRoutes() {
           }
         />
 
+        {/* Notifications (Bildirim Merkezi) */}
+        <Route
+          path="notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Organizer Dashboard (Organizatör Paneli) */}
         <Route
           path="organizer"

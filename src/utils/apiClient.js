@@ -361,6 +361,8 @@ export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
     expiresAt: verifyRes.data.expiresAt,
   };
 
+  broadcastAuthEvent("LOGIN", { walletAddress: activeAuthState.walletAddress });
+
   return activeAuthState;
 }
 
@@ -704,6 +706,7 @@ export async function fetchCommunitiesFromBackend({
   university = "ALL",
   page = 1,
   limit = 20,
+  customFetch = null,
 } = {}) {
   const params = new URLSearchParams();
   if (search) params.append("search", search);
@@ -1063,6 +1066,11 @@ export function connectNotificationStream({
 
   es.onerror = (err) => {
     if (typeof onError === "function") onError(err);
+    if (es.readyState === 2 /* CLOSED */) {
+      try {
+        es.close();
+      } catch {}
+    }
   };
 
   return () => {

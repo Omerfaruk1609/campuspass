@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
   CONTRACT_ADDRESS,
@@ -24,9 +24,13 @@ import {
   cancelEventOnBackend,
   checkServerSession,
   clearActiveAuthState,
+  connectNotificationStream,
   ensureOrganizerSiweSession,
   fetchEventsMetadataFromBackend,
+  fetchUnreadNotificationCountFromBackend,
   logoutOrganizerSiweSession,
+  markAllNotificationsAsReadOnBackend,
+  markNotificationAsReadOnBackend,
   reactivateEventOnBackend,
   readPendingSyncQueue,
   removePendingMetadataSync,
@@ -43,6 +47,10 @@ export function AppProvider({
   initialLoadingEvents = false,
 }) {
   const [account, setAccount] = useState(initialAccount);
+  const accountRef = useRef(initialAccount);
+  useEffect(() => {
+    accountRef.current = account;
+  }, [account]);
   const [chainId, setChainId] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -164,7 +172,8 @@ export function AppProvider({
         const attendanceCountMap = { ...apiAttendanceCountMap };
         try {
           const filter = contract.filters.AttendanceMarked();
-          const logs = await contract.queryFilter(filter, -50000);
+          // Monad Testnet RPC eth_getLogs isteğini 100 blokla sınırlar
+          const logs = await contract.queryFilter(filter, -90);
           const uniquePerEvent = {};
           for (const log of logs) {
             const evId = Number(log.args?.eventId);
@@ -254,6 +263,7 @@ export function AppProvider({
           if (isMounted) setChainId(Number(network.chainId));
           if (accounts.length > 0) {
             currentAccount = ethers.getAddress(accounts[0]);
+            accountRef.current = currentAccount;
             if (isMounted) setAccount(currentAccount);
           }
         } catch {
@@ -266,15 +276,32 @@ export function AppProvider({
         const serverAuth = await checkServerSession();
         if (isMounted) {
           if (serverAuth && serverAuth.authenticated) {
-            setSessionState({
-              authenticated: true,
-              walletAddress: serverAuth.walletAddress,
-              csrfToken: serverAuth.csrfToken,
-              loading: false,
-            });
-            if (!currentAccount && serverAuth.walletAddress) {
-              currentAccount = serverAuth.walletAddress;
-              setAccount(serverAuth.walletAddress);
+            // Eğer cüzdan bağlıysa ve sunucu oturumunun cüzdanından farklıysa, eski oturumu geçersiz kıl
+            if (
+              currentAccount &&
+              serverAuth.walletAddress &&
+              currentAccount.toLowerCase() !== serverAuth.walletAddress.toLowerCase()
+            ) {
+              clearActiveAuthState();
+              logoutOrganizerSiweSession().catch(() => {});
+              setSessionState({
+                authenticated: false,
+                walletAddress: null,
+                csrfToken: null,
+                loading: false,
+              });
+            } else {
+              setSessionState({
+                authenticated: true,
+                walletAddress: serverAuth.walletAddress,
+                csrfToken: serverAuth.csrfToken,
+                loading: false,
+              });
+              if (!currentAccount && serverAuth.walletAddress) {
+                currentAccount = serverAuth.walletAddress;
+                accountRef.current = currentAccount;
+                setAccount(serverAuth.walletAddress);
+              }
             }
           } else {
             setSessionState({
@@ -312,10 +339,18 @@ export function AppProvider({
     const handleAccountsChanged = (accounts) => {
       const nextAcc =
         accounts && accounts.length > 0 ? ethers.getAddress(accounts[0]) : null;
-      // Cüzdan değiştiğinde önceki cüzdanın SIWE oturumunu ve yetkili durumunu temizle
+
+      // Hesap değişmemişse gereksiz sıfırlama veya işlem yapma
+      if (nextAcc?.toLowerCase() === accountRef.current?.toLowerCase()) {
+        return;
+      }
+
+      accountRef.current = nextAcc;
+      setAccount(nextAcc);
+
+      // Cüzdan değiştiğinde veya bağlantı koptuğunda önceki cüzdanın SIWE oturumunu ve yetkili durumunu temizle
       clearActiveAuthState();
       logoutOrganizerSiweSession().catch(() => {});
-      setAccount(nextAcc);
       setSessionState({
         authenticated: false,
         walletAddress: null,
@@ -328,19 +363,24 @@ export function AppProvider({
     const handleChainChanged = (hexChainId) => {
       const parsed = Number.parseInt(hexChainId, 16);
       setChainId(parsed);
-      loadEvents(account);
+      loadEvents(accountRef.current);
     };
 
     window.ethereum.on("accountsChanged", handleAccountsChanged);
     window.ethereum.on("chainChanged", handleChainChanged);
 
     return () => {
-      if (window.ethereum.removeListener) {
-        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
-        window.ethereum.removeListener("chainChanged", handleChainChanged);
+      if (window.ethereum) {
+        if (typeof window.ethereum.removeListener === "function") {
+          window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          window.ethereum.removeListener("chainChanged", handleChainChanged);
+        } else if (typeof window.ethereum.off === "function") {
+          window.ethereum.off("accountsChanged", handleAccountsChanged);
+          window.ethereum.off("chainChanged", handleChainChanged);
+        }
       }
     };
-  }, [account, loadEvents]);
+  }, [loadEvents]);
 
   // Canlı SSE Bildirim Akışı ve Okunmamış Bildirim Sayacı
   useEffect(() => {
@@ -416,6 +456,19 @@ export function AppProvider({
               csrfToken: null,
               loading: false,
             });
+          } else if (payload.type === "LOGIN" && payload.walletAddress) {
+            checkServerSession()
+              .then((auth) => {
+                if (auth && auth.authenticated) {
+                  setSessionState({
+                    authenticated: true,
+                    walletAddress: auth.walletAddress,
+                    csrfToken: auth.csrfToken,
+                    loading: false,
+                  });
+                }
+              })
+              .catch(() => {});
           }
         } catch {
           // JSON ayrıştırma hatası göz ardı edilir
@@ -427,6 +480,31 @@ export function AppProvider({
     return () => {
       window.removeEventListener("storage", handleStorageChange);
     };
+  }, []);
+
+  // SIWE oturumu başlat
+  const handleSiweLogin = useCallback(async (customSigner = null) => {
+    const currentAcc = accountRef.current;
+    if (!currentAcc) {
+      throw new Error("SIWE kimlik doğrulaması için önce cüzdanınızı bağlayın.");
+    }
+    let signer = customSigner;
+    if (!signer && typeof window !== "undefined" && window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+    }
+    const auth = await ensureOrganizerSiweSession({
+      signer,
+      walletAddress: currentAcc,
+      chainId: MONAD_CHAIN_ID,
+    });
+    setSessionState({
+      authenticated: true,
+      walletAddress: auth.walletAddress,
+      csrfToken: auth.csrfToken,
+      loading: false,
+    });
+    return auth;
   }, []);
 
   // Sunucu SIWE oturumunu güvenle sonlandır
@@ -488,7 +566,23 @@ export function AppProvider({
 
       if (accounts.length > 0) {
         const checksummed = ethers.getAddress(accounts[0]);
+        accountRef.current = checksummed;
         setAccount(checksummed);
+
+        // Eğer mevcut sunucu oturumu bağlanan cüzdanla eşleşmiyorsa eski oturumu temizle
+        if (
+          sessionState.walletAddress &&
+          sessionState.walletAddress.toLowerCase() !== checksummed.toLowerCase()
+        ) {
+          clearActiveAuthState();
+          logoutOrganizerSiweSession().catch(() => {});
+          setSessionState({
+            authenticated: false,
+            walletAddress: null,
+            csrfToken: null,
+            loading: false,
+          });
+        }
 
         if (connectedChainId !== MONAD_CHAIN_ID) {
           try {
@@ -999,6 +1093,7 @@ export function AppProvider({
     handleConnectWallet,
     handleDisconnectWallet,
     handleLogout,
+    handleSiweLogin,
     handleSwitchNetwork,
     handleCreateEvent,
     handleUpdateEventMetadata,

@@ -1,8 +1,10 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   approveCommunityApplicationOnBackend,
+  createCommunityAnnouncementOnBackend,
   fetchCommunityAnalyticsFromBackend,
+  fetchCommunityAnnouncementsFromBackend,
   fetchCommunityApplicationsFromBackend,
   fetchCommunityEventsFromBackend,
   fetchCommunityMembersFromBackend,
@@ -14,7 +16,7 @@ import {
   updateCommunityMemberRoleOnBackend,
   updateCommunityOnBackend,
 } from "../utils/apiClient";
-import { shortenAddress } from "../data/events";
+import { CONTRACT_ADDRESS, MONAD_CHAIN_ID, shortenAddress } from "../data/events";
 
 export default function CommunityManagePage({
   slug: propSlug,
@@ -55,8 +57,8 @@ export default function CommunityManagePage({
 
   // Etkinlik Bağlama State
   const [linkEventId, setLinkEventId] = useState("");
-  const linkChainId = 10143;
-  const linkContractAddress = "0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da";
+  const linkChainId = MONAD_CHAIN_ID;
+  const linkContractAddress = CONTRACT_ADDRESS;
 
   // İşlem Bildirimi
   const [banner, setBanner] = useState(null);

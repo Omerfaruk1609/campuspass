@@ -23,6 +23,8 @@ export default function RootLayout() {
     handleDisconnectWallet,
     handleConnectWallet,
     handleSwitchNetwork,
+    handleSiweLogin,
+    unreadNotificationCount,
   } = useAppContext();
 
   return (
@@ -37,7 +39,9 @@ export default function RootLayout() {
         onDisconnectWallet={handleDisconnectWallet}
         onConnectWallet={handleConnectWallet}
         onSwitchNetwork={handleSwitchNetwork}
+        onSiweLogin={handleSiweLogin}
         isConnecting={isConnecting}
+        unreadNotificationCount={unreadNotificationCount}
       />
 
       {/* Backend API Durumu ve Yerel Veri Kurtarma / Senkronizasyon Çubuğu */}

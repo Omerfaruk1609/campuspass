@@ -40,6 +40,11 @@ export default function NotificationsPage() {
   // Bildirimleri API'den yükleme
   const loadNotifications = useCallback(
     async (targetPage = 1, append = false) => {
+      if (!account) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -66,7 +71,7 @@ export default function NotificationsPage() {
         setLoading(false);
       }
     },
-    [filter, setUnreadNotificationCount]
+    [account, filter, setUnreadNotificationCount]
   );
 
   useEffect(() => {

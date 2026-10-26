@@ -4,7 +4,9 @@ import { useAppContext } from "../context/AppContext";
 import { MONAD_CHAIN_ID, MONAD_EXPLORER_URL, shortenAddress } from "../data/events";
 import {
   ensureSiweSession,
+  fetchNotificationPreferencesFromBackend,
   fetchStudentAccountProfileFromBackend,
+  updateNotificationPreferencesOnBackend,
   updateStudentProfileOnBackend,
 } from "../utils/apiClient";
 
@@ -16,6 +18,7 @@ export default function AccountSettingsPage() {
     handleLogout,
     handleDisconnectWallet,
     handleSwitchNetwork,
+    handleSiweLogin,
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState("profile"); // profile | security | privacy
@@ -168,8 +171,15 @@ export default function AccountSettingsPage() {
     if (!account) return;
     setSiweLoggingIn(true);
     try {
-      await ensureSiweSession(account);
-      window.location.reload();
+      if (typeof handleSiweLogin === "function") {
+        await handleSiweLogin();
+      } else {
+        await ensureSiweSession(account);
+      }
+      setBanner({
+        type: "success",
+        message: "SIWE oturumu başarıyla açıldı.",
+      });
     } catch (err) {
       setBanner({
         type: "error",

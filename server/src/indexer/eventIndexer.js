@@ -262,6 +262,56 @@ export function createEventIndexer({
         }
       }
 
+      async function ensureEventMetadataExists(eventId) {
+        const existing = await tx.eventMetadata.findUnique({
+          where: {
+            chainId_contractAddress_eventId: {
+              chainId: Number(chainId),
+              contractAddress: normalizedContract,
+              eventId,
+            },
+          },
+        });
+        if (existing) return existing;
+
+        let organizer = "0x0000000000000000000000000000000000000000";
+        let title = `Etkinlik #${eventId}`;
+        let capacity = 100;
+        try {
+          const onChain = await activeContract.events(eventId);
+          if (onChain && onChain.organizer) {
+            organizer = onChain.organizer.toLowerCase();
+            title = onChain.title || title;
+            capacity = Number(onChain.capacity) || capacity;
+          }
+        } catch {
+          // Blokzincir okuma hatası olursa varsayılanlarla devam et
+        }
+
+        return tx.eventMetadata.create({
+          data: {
+            chainId: Number(chainId),
+            contractAddress: normalizedContract,
+            eventId,
+            organizerAddress: organizer,
+            title,
+            capacity,
+            description: "Monad Testnet üzerinde kayıtlı etkinlik.",
+            community: "Kampüs Topluluğu",
+            category: "Blockchain",
+            startAt: new Date("2026-11-15T14:00:00+03:00"),
+            endAt: new Date("2026-11-15T17:00:00+03:00"),
+            registrationDeadline: new Date("2026-11-15T13:30:00+03:00"),
+            campus: "Merkez Kampüs",
+            building: "Mühendislik Fakültesi",
+            room: "Konferans Salonu",
+            posterUrl: "",
+            cancelled: false,
+            cancelReason: "",
+          },
+        });
+      }
+
       for (const item of logs) {
         if (item.eventName === "EventCreated") {
           const eventId = Number(item.args.eventId ?? item.args[0]);
@@ -354,6 +404,7 @@ export function createEventIndexer({
           if (existingByTx || existingByParticipant) {
             metrics.duplicatesSkipped += 1;
           } else {
+            await ensureEventMetadataExists(eventId);
             await tx.indexedRegistration.create({
               data: {
                 chainId: Number(chainId),
@@ -398,6 +449,7 @@ export function createEventIndexer({
           if (existingByTx || existingByParticipant) {
             metrics.duplicatesSkipped += 1;
           } else {
+            await ensureEventMetadataExists(eventId);
             await tx.indexedAttendance.create({
               data: {
                 chainId: Number(chainId),
