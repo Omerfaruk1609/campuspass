@@ -1,12 +1,23 @@
 import { Link, useParams } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
+import { MONAD_CHAIN_ID, shortenAddress } from "../../data/events";
 
-export default function OrganizerGuard({ children, requireEventOrganizer = false }) {
-  const { account, sessionState, isConnecting, handleConnectWallet, events, loadingEvents } =
-    useAppContext();
-  const { eventId } = useParams();
+export default function OrganizerGuard({ children, requireEventOrganizer = false, eventId: propEventId }) {
+  const {
+    account,
+    chainId,
+    sessionState,
+    isConnecting,
+    handleConnectWallet,
+    handleSwitchNetwork,
+    handleSiweLogin,
+    events,
+    loadingEvents,
+  } = useAppContext();
+  const params = useParams();
+  const eventId = propEventId ?? params?.eventId;
 
-  // Oturum durumu kontrol ediliyor
+  // 1. Oturum durumu kontrol ediliyor
   if (sessionState.loading) {
     return (
       <div className="stitch-shell page-container" style={{ padding: "5rem 1rem", textAlign: "center" }}>
@@ -25,7 +36,7 @@ export default function OrganizerGuard({ children, requireEventOrganizer = false
     );
   }
 
-  // Cüzdan bağlı değil
+  // 2. Cüzdan bağlı değil
   if (!account) {
     return (
       <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
@@ -90,7 +101,129 @@ export default function OrganizerGuard({ children, requireEventOrganizer = false
     );
   }
 
-  // Belirli bir etkinlik analitiğine giriliyorsa organizatör sahipliğini kontrol et
+  // 3. Yanlış ağ (Chain ID uyumsuzluğu)
+  if (chainId && Number(chainId) !== MONAD_CHAIN_ID) {
+    return (
+      <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
+        <div className="stitch-container">
+          <section
+            className="stitch-card"
+            style={{
+              padding: "4rem 2rem",
+              textAlign: "center",
+              borderRadius: "1.5rem",
+              background:
+                "linear-gradient(135deg, rgba(17, 31, 59, 0.95) 0%, rgba(3, 18, 46, 0.95) 100%)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              maxWidth: "600px",
+              margin: "0 auto",
+            }}
+          >
+            <div
+              style={{
+                width: "64px",
+                height: "64px",
+                borderRadius: "16px",
+                backgroundColor: "rgba(239, 68, 68, 0.15)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--stitch-error)",
+                marginBottom: "1.5rem",
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "32px" }}>
+                wrong_location
+              </span>
+            </div>
+            <h2 className="font-headline-lg" style={{ margin: "0.5rem 0", color: "var(--stitch-error)" }}>
+              Yanlış Ağdasınız
+            </h2>
+            <p
+              className="font-body-md text-on-surface-variant"
+              style={{ maxWidth: "480px", margin: "0 auto 2rem auto", lineHeight: 1.6 }}
+            >
+              Organizatör paneli işlemleri için lütfen Monad Testnet ({MONAD_CHAIN_ID}) ağına geçiş yapın.
+            </p>
+            <button
+              type="button"
+              className="stitch-btn-primary"
+              onClick={handleSwitchNetwork}
+              style={{ padding: "0.75rem 2rem", fontSize: "1rem" }}
+            >
+              Monad Testnet&apos;e Geç
+            </button>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. SIWE oturumu gerekli (Organizatör API verileri için)
+  if (!sessionState.authenticated) {
+    return (
+      <div className="stitch-shell page-container" style={{ padding: "4rem 1rem" }}>
+        <div className="stitch-container">
+          <section
+            className="stitch-card"
+            style={{
+              padding: "4rem 2rem",
+              textAlign: "center",
+              borderRadius: "1.5rem",
+              background:
+                "linear-gradient(135deg, rgba(17, 31, 59, 0.95) 0%, rgba(3, 18, 46, 0.95) 100%)",
+              border: "1px solid rgba(111, 136, 255, 0.3)",
+              maxWidth: "600px",
+              margin: "0 auto",
+            }}
+          >
+            <div
+              style={{
+                width: "64px",
+                height: "64px",
+                borderRadius: "16px",
+                backgroundColor: "rgba(111, 136, 255, 0.15)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--stitch-primary)",
+                marginBottom: "1.5rem",
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "32px" }}>
+                vpn_key
+              </span>
+            </div>
+            <span className="stitch-badge stitch-badge-testnet" style={{ marginBottom: "0.75rem" }}>
+              Güvenli Oturum Gerekli
+            </span>
+            <h2 className="font-headline-lg" style={{ margin: "0.5rem 0", color: "var(--stitch-on-surface)" }}>
+              SIWE ile Giriş Yapın
+            </h2>
+            <p
+              className="font-body-md text-on-surface-variant"
+              style={{ maxWidth: "480px", margin: "0 auto 2rem auto", lineHeight: 1.6 }}
+            >
+              Organizatör paneli verilerine ve katılımcı listelerine erişmek için bağlı cüzdanınızla ({shortenAddress(account)}) oturum açmanız gerekmektedir.
+            </p>
+            <button
+              type="button"
+              className="stitch-btn-primary"
+              onClick={handleSiweLogin}
+              style={{ padding: "0.75rem 2rem", fontSize: "1rem" }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                login
+              </span>
+              <span>SIWE ile Giriş Yap</span>
+            </button>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  // 5. Belirli bir etkinlik analitiğine giriliyorsa organizatör sahipliğini kontrol et
   if (requireEventOrganizer && eventId) {
     if (loadingEvents) {
       return (

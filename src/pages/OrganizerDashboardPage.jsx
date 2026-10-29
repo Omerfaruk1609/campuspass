@@ -180,6 +180,20 @@ export default function OrganizerDashboardPage(props) {
     return list;
   }, [dashboardData, statusFilter, searchQuery]);
 
+  // Durum 0: Oturum kontrolü devam ediyor
+  const sessionLoading = context?.sessionState?.loading ?? false;
+  if (sessionLoading) {
+    return (
+      <div className="page-container">
+        <section className="card-panel">
+          <div className="empty-state">
+            <p>Organizatör oturumu ve cüzdan durumu kontrol ediliyor...</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   // Durum 1: Cüzdan bağlı değil
   if (!account) {
     return (

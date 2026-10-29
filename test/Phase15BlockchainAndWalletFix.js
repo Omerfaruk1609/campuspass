@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import {
   parseBlockchainError,
+  callWithRetry,
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
   MONAD_RPC_URL,
@@ -73,12 +74,49 @@ describe("Faz 15 — Blokzincir Olay Okuma ve Cüzdan/SIWE Yaşam Döngüsü Reg
       expect(parseBlockchainError(err)).to.include("istek veya blok aralığı sınırı aşıldı");
     });
 
-    it("1.6 SIWE oturum gerekliliği (SESSION_REQUIRED) hatasını ayırt edebilmeli", function () {
+    it("1.6 Monad RPC rate limit (-32011 'requests limited to 15/sec') CALL_EXCEPTION ile sarmalandığında doğru Türkçe rate limit hatası dönmeli", function () {
+      const err = new Error("missing revert data (action=\"call\", data=null, reason=null)");
+      err.code = "CALL_EXCEPTION";
+      err.shortMessage = "missing revert data";
+      err.info = {
+        error: {
+          code: -32011,
+          message: "requests limited to 15/sec",
+        },
+      };
+
+      const parsed = parseBlockchainError(err);
+      expect(parsed).to.include("istek veya blok aralığı sınırı aşıldı (en fazla 15 istek/sn)");
+      // Yanıltıcı "sözleşme kodu bulunamadı" hatası OLMAMALI
+      expect(parsed).to.not.include("sözleşme kodu bulunamadı");
+    });
+
+    it("1.7 callWithRetry geçici -32011 rate limit hatası alındığında üstel geri çekilmeyle tekrar denemeli ve başarılı olmalı", async function () {
+      let attempts = 0;
+      const result = await callWithRetry(
+        async () => {
+          attempts += 1;
+          if (attempts < 3) {
+            const err = new Error("requests limited to 15/sec");
+            err.info = { error: { code: -32011, message: "requests limited to 15/sec" } };
+            throw err;
+          }
+          return "success_val";
+        },
+        3,
+        20
+      );
+
+      expect(attempts).to.equal(3);
+      expect(result).to.equal("success_val");
+    });
+
+    it("1.8 SIWE oturum gerekliliği (SESSION_REQUIRED) hatasını ayırt edebilmeli", function () {
       const err = new Error("SESSION_REQUIRED: SIWE oturumu gereklidir");
       expect(parseBlockchainError(err)).to.include("SIWE oturumunuz bulunmuyor veya süresi dolmuş");
     });
 
-    it("1.7 Varsayılan sözleşme adresi ve Monad Chain ID doğru yapılandırılmış olmalı", function () {
+    it("1.9 Varsayılan sözleşme adresi ve Monad Chain ID doğru yapılandırılmış olmalı", function () {
       expect(CONTRACT_ADDRESS).to.match(/^0x[a-fA-F0-9]{40}$/);
       expect(MONAD_CHAIN_ID).to.equal(10143);
       expect(MONAD_RPC_URL).to.include("monad");
@@ -360,6 +398,119 @@ describe("Faz 15 — Blokzincir Olay Okuma ve Cüzdan/SIWE Yaşam Döngüsü Reg
 
       expect(html).to.include("0x1111...1111");
       expect(html).to.include("Sertifikalarım");
+    });
+
+    it("3.7 OrganizerGuard: Oturum yüklenirken (session restoration pending) yükleniyor durumu göstermeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialSessionState: { authenticated: false, walletAddress: null, loading: true },
+            },
+            el(OrganizerGuard, null, el("div", null, "Organizatör İçeriği"))
+          )
+        )
+      );
+
+      expect(html).to.include("Organizatör oturumu kontrol ediliyor...");
+      expect(html).to.not.include("Organizatör İçeriği");
+    });
+
+    it("3.8 OrganizerGuard: Cüzdan bağlı değilken 'Organizatör Cüzdan Bağlantısı Gerekli' göstermeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: null,
+              initialSessionState: { authenticated: false, walletAddress: null, loading: false },
+            },
+            el(OrganizerGuard, null, el("div", null, "Organizatör İçeriği"))
+          )
+        )
+      );
+
+      expect(html).to.include("Organizatör Cüzdan Bağlantısı Gerekli");
+      expect(html).to.include("Organizatör Cüzdanını Bağla");
+      expect(html).to.not.include("Organizatör İçeriği");
+    });
+
+    it("3.9 OrganizerGuard: Yanlış ağdayken (wrong network) ağ geçiş uyarısı göstermeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialChainId: 1, // Mainnet instead of 10143
+              initialSessionState: { authenticated: true, walletAddress: testWallet, loading: false },
+            },
+            el(OrganizerGuard, null, el("div", null, "Organizatör İçeriği"))
+          )
+        )
+      );
+
+      expect(html).to.include("Yanlış Ağdasınız");
+      expect(html).to.include("Monad Testnet");
+      expect(html).to.not.include("Organizatör İçeriği");
+    });
+
+    it("3.10 OrganizerGuard: Cüzdan bağlı ancak SIWE yapılmamışsa 'SIWE ile Giriş Yapın' göstermeli", function () {
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: testWallet,
+              initialChainId: 10143,
+              initialSessionState: { authenticated: false, walletAddress: null, loading: false },
+            },
+            el(OrganizerGuard, null, el("div", null, "Organizatör İçeriği"))
+          )
+        )
+      );
+
+      expect(html).to.include("SIWE ile Giriş Yapın");
+      expect(html).to.include("Güvenli Oturum Gerekli");
+      expect(html).to.not.include("Organizatör İçeriği");
+    });
+
+    it("3.11 OrganizerGuard: Başka bir kullanıcının etkinliğine girildiğinde 403 Forbidden göstermeli", function () {
+      const otherUserWallet = "0x9999999999999999999999999999999999999999";
+      const html = renderToString(
+        el(
+          MemoryRouter,
+          { initialEntries: ["/organizer/events/1"] },
+          el(
+            AppProvider,
+            {
+              initialAccount: otherUserWallet,
+              initialChainId: 10143,
+              initialSessionState: { authenticated: true, walletAddress: otherUserWallet, loading: false },
+              initialEvents: [testSampleEvent],
+              initialLoadingEvents: false,
+            },
+            el(
+              OrganizerGuard,
+              { requireEventOrganizer: true, eventId: 1 },
+              el("div", null, "Gizli Analitik")
+            )
+          )
+        )
+      );
+
+      expect(html).to.include("Yetkisiz Erişim (403 Forbidden)");
+      expect(html).to.not.include("Gizli Analitik");
     });
   });
 });

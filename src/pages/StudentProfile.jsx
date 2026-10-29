@@ -377,6 +377,26 @@ export default function StudentProfile(props) {
     }
   }
 
+  // Oturum ve cüzdan durumu yükleniyor ekranı
+  const sessionLoading = context?.sessionState?.loading ?? false;
+  if (sessionLoading) {
+    return (
+      <div className="stitch-shell page-container" style={{ padding: "5rem 1rem", textAlign: "center" }}>
+        <div className="stitch-container">
+          <span
+            className="material-symbols-outlined pulse-glow"
+            style={{ fontSize: "40px", color: "var(--stitch-primary)" }}
+          >
+            sync
+          </span>
+          <p className="font-body-md text-on-surface-variant" style={{ marginTop: "1rem" }}>
+            Öğrenci profili ve cüzdan durumu kontrol ediliyor...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Cüzdan bağlı değil ekranı
   if (!account) {
     return (

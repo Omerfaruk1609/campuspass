@@ -184,6 +184,19 @@ export default function OrganizerEventAnalyticsPage(props) {
     }
   }
 
+  const sessionLoading = context?.sessionState?.loading ?? false;
+  if (sessionLoading) {
+    return (
+      <div className="page-container">
+        <section className="card-panel">
+          <div className="empty-state">
+            <p>Organizatör oturumu kontrol ediliyor...</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (!account) {
     return (
       <div className="page-container">

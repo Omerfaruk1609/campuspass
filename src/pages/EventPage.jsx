@@ -6,6 +6,7 @@ import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
   MONAD_EXPLORER_URL,
+  callWithRetry,
   getReadOnlyContract,
   parseBlockchainError,
   shortenAddress,
@@ -106,7 +107,7 @@ export default function EventPage(props) {
       setLoadingSingle(true);
       try {
         const contract = getReadOnlyContract();
-        const ev = await contract.events(targetEventId);
+        const ev = await callWithRetry(() => contract.events(targetEventId));
         if (Number(ev.id) === 0) {
           if (isMounted) {
             setSingleEvent(null);
@@ -120,8 +121,8 @@ export default function EventPage(props) {
         if (account) {
           try {
             const [r, a] = await Promise.all([
-              contract.registered(targetEventId, account),
-              contract.attended(targetEventId, account),
+              callWithRetry(() => contract.registered(targetEventId, account)),
+              callWithRetry(() => contract.attended(targetEventId, account)),
             ]);
             isReg = Boolean(r);
             isAtt = Boolean(a);
@@ -181,8 +182,8 @@ export default function EventPage(props) {
       try {
         const contract = getReadOnlyContract();
         const [reg, att] = await Promise.all([
-          contract.registered(targetEventId, account),
-          contract.attended(targetEventId, account),
+          callWithRetry(() => contract.registered(targetEventId, account)),
+          callWithRetry(() => contract.attended(targetEventId, account)),
         ]);
         if (isMounted) {
           setUserEventStatus({

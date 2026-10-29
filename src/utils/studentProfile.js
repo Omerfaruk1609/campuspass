@@ -3,6 +3,7 @@ import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
   MONAD_EXPLORER_URL,
+  callWithRetry,
   parseBlockchainError,
 } from "../data/events.js";
 import { mergeOnChainEventWithMetadata } from "./eventMetadata.js";
@@ -213,22 +214,23 @@ export async function queryContractEventsChunked(
   try {
     const provider = contract.runner?.provider || contract.provider;
     if (!provider || typeof provider.getBlockNumber !== "function") {
-      return await contract.queryFilter(filter);
+      return await callWithRetry(() => contract.queryFilter(filter)).catch(() => []);
     }
 
-    const latestBlock = await provider.getBlockNumber();
+    const latestBlock = await callWithRetry(() => provider.getBlockNumber()).catch(() => null);
+    if (!latestBlock) return [];
     const startBlock = Math.max(0, latestBlock - maxLookbackBlocks);
     const collectedLogs = [];
 
     for (let toBlock = latestBlock; toBlock >= startBlock; toBlock -= chunkSize) {
       const fromBlock = Math.max(startBlock, toBlock - chunkSize + 1);
       try {
-        const chunkLogs = await contract.queryFilter(filter, fromBlock, toBlock);
+        const chunkLogs = await callWithRetry(() => contract.queryFilter(filter, fromBlock, toBlock));
         if (Array.isArray(chunkLogs)) {
           collectedLogs.push(...chunkLogs);
         }
       } catch {
-        // RPC belirli bir blok aralığını reddederse diğer parçalarla güvenli şekilde devam et
+        // RPC belirli bir blok aralığını reddederse veya rate limit verirse güvenli şekilde sonlandır
         break;
       }
       if (fromBlock === 0) break;
@@ -270,7 +272,7 @@ export async function fetchStudentProfileData({
   }
 
   try {
-    const nextIdBigInt = await contract.nextEventId();
+    const nextIdBigInt = await callWithRetry(() => contract.nextEventId());
     const totalEvents = Number(nextIdBigInt) - 1;
 
     if (totalEvents <= 0) {
@@ -286,55 +288,67 @@ export async function fetchStudentProfileData({
       };
     }
 
-    // Öğrenciye ait gerçek işlem hash'lerini (varsa) parçalı olay sorgusuyla topla
+    // Öğrenciye ait gerçek işlem hash'lerini (varsa) parçalı olay sorgusuyla topla (isteğe bağlı, hata durumunda akışı engellemez)
     const regTxByEvent = {};
     const attTxByEvent = {};
 
     if (contract.filters) {
-      const [regLogs, attLogs] = await Promise.all([
-        typeof contract.filters.UserRegistered === "function"
-          ? queryContractEventsChunked(
-              contract,
-              contract.filters.UserRegistered(null, normalizedWallet)
-            )
-          : Promise.resolve([]),
-        typeof contract.filters.AttendanceMarked === "function"
-          ? queryContractEventsChunked(
-              contract,
-              contract.filters.AttendanceMarked(null, normalizedWallet)
-            )
-          : Promise.resolve([]),
-      ]);
+      try {
+        const [regLogs, attLogs] = await Promise.all([
+          typeof contract.filters.UserRegistered === "function"
+            ? queryContractEventsChunked(
+                contract,
+                contract.filters.UserRegistered(null, normalizedWallet)
+              )
+            : Promise.resolve([]),
+          typeof contract.filters.AttendanceMarked === "function"
+            ? queryContractEventsChunked(
+                contract,
+                contract.filters.AttendanceMarked(null, normalizedWallet)
+              )
+            : Promise.resolve([]),
+        ]);
 
-      for (const log of regLogs) {
-        const evId = Number(log.args?.eventId);
-        if (evId && log.transactionHash) {
-          regTxByEvent[evId] = log.transactionHash;
+        for (const log of (regLogs || [])) {
+          const evId = Number(log.args?.eventId);
+          if (evId && log.transactionHash) {
+            regTxByEvent[evId] = log.transactionHash;
+          }
         }
-      }
 
-      for (const log of attLogs) {
-        const evId = Number(log.args?.eventId);
-        if (evId && log.transactionHash) {
-          attTxByEvent[evId] = log.transactionHash;
+        for (const log of (attLogs || [])) {
+          const evId = Number(log.args?.eventId);
+          if (evId && log.transactionHash) {
+            attTxByEvent[evId] = log.transactionHash;
+          }
         }
+      } catch {
+        // İsteğe bağlı olay geçmişi sorgusu ana profil akışını kesmez
       }
     }
 
     const ids = Array.from({ length: totalEvents }, (_, idx) => idx + 1);
 
-    // Önce yalnızca öğrencinin kayıtlı olup olmadığını paralel kontrol et (gereksiz tam okumaları azaltır)
-    const registrationFlags = await Promise.all(
-      ids.map((id) => contract.registered(id, normalizedWallet))
-    );
+    // Rate-limit'e takılmamak için kayıt bayraklarını kontrollü ve retry korumalı olarak sorgula
+    const registeredIds = [];
+    for (const id of ids) {
+      try {
+        const isReg = await callWithRetry(() => contract.registered(id, normalizedWallet));
+        if (isReg) {
+          registeredIds.push(id);
+        }
+      } catch {
+        // Tekil kayıt hatasında atla
+      }
+    }
 
-    const registeredIds = ids.filter((_, idx) => Boolean(registrationFlags[idx]));
-
-    const registeredEvents = await Promise.all(
-      registeredIds.map(async (id) => {
+    // Kayıtlı olunan etkinliklerin detaylarını sırayla ve güvenli gecikmeyle çek
+    const registeredEvents = [];
+    for (const id of registeredIds) {
+      try {
         const [ev, att] = await Promise.all([
-          contract.events(id),
-          contract.attended(id, normalizedWallet),
+          callWithRetry(() => contract.events(id)),
+          callWithRetry(() => contract.attended(id, normalizedWallet)),
         ]);
 
         const baseOnChain = {
@@ -357,11 +371,13 @@ export async function fetchStudentProfileData({
         });
 
         merged.attendanceState = classifyStudentAttendanceState(merged);
-        return merged;
-      })
-    );
+        registeredEvents.push(merged);
+      } catch {
+        // Tekil etkinlik okuma hatasında diğer kayıtları göstermeye devam et
+      }
+    }
 
-    //Kronolojik sıralama (en yakın/yeni üstte)
+    // Kronolojik sıralama (en yakın/yeni üstte)
     registeredEvents.sort(
       (a, b) => (Date.parse(b.startAt) || 0) - (Date.parse(a.startAt) || 0)
     );

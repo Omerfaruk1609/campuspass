@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
+  callWithRetry,
   getReadOnlyContract,
   getSignerContract,
   parseBlockchainError,
@@ -42,6 +43,7 @@ const AppContext = createContext(null);
 export function AppProvider({
   children,
   initialAccount = null,
+  initialChainId = null,
   initialSessionState = null,
   initialEvents = [],
   initialLoadingEvents = true,
@@ -51,7 +53,7 @@ export function AppProvider({
   useEffect(() => {
     accountRef.current = account;
   }, [account]);
-  const [chainId, setChainId] = useState(null);
+  const [chainId, setChainId] = useState(initialChainId);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const [events, setEvents] = useState(initialEvents);
@@ -162,7 +164,7 @@ export function AppProvider({
         computePendingItemsForAccount(targetAccount, serverMetadataMap);
 
         const contract = getReadOnlyContract();
-        const nextIdBigInt = await contract.nextEventId();
+        const nextIdBigInt = await callWithRetry(() => contract.nextEventId());
         const total = Number(nextIdBigInt) - 1;
 
         if (total <= 0) {
@@ -192,48 +194,55 @@ export function AppProvider({
             );
           }
         } catch {
-          // RPC log aralığı kısıtlıysa güvenli şekilde devam et
+          // RPC log aralığı kısıtlıysa güvenli şekilde devam et (asla etkinlik yüklemesini engellemez)
         }
 
         const ids = Array.from({ length: total }, (_, idx) => idx + 1);
-        const loaded = await Promise.all(
-          ids.map(async (id) => {
-            const ev = await contract.events(id);
-            let isRegistered = false;
-            let isAttended = false;
+        const loaded = [];
 
-            if (targetAccount) {
+        // Monad Testnet RPC'nin 15 req/sec sınırını aşmamak için etkinlikleri sıralı/kontrollü yükle
+        for (const id of ids) {
+          const ev = await callWithRetry(() => contract.events(id));
+          let isRegistered = false;
+          let isAttended = false;
+
+          if (targetAccount && ethers.isAddress(targetAccount)) {
+            try {
               const [reg, att] = await Promise.all([
-                contract.registered(id, targetAccount),
-                contract.attended(id, targetAccount),
+                callWithRetry(() => contract.registered(id, targetAccount)),
+                callWithRetry(() => contract.attended(id, targetAccount)),
               ]);
               isRegistered = Boolean(reg);
               isAttended = Boolean(att);
+            } catch {
+              // Bireysel kayıt kontrolü başarısız olursa etkinliğin kendisini yüklemeyi engelleme
             }
+          }
 
-            const verifiedCount = Math.max(
-              attendanceCountMap[id] || 0,
-              isAttended ? 1 : 0
-            );
+          const verifiedCount = Math.max(
+            attendanceCountMap[id] || 0,
+            isAttended ? 1 : 0
+          );
 
-            const baseOnChainEvent = {
-              id: Number(ev.id),
-              organizer: ev.organizer,
-              title: ev.title,
-              capacity: Number(ev.capacity),
-              registeredCount: Number(ev.registeredCount),
-              active: Boolean(ev.active),
-              isRegistered,
-              isAttended,
-              verifiedAttendanceCount: verifiedCount,
-            };
+          const baseOnChainEvent = {
+            id: Number(ev.id),
+            organizer: ev.organizer,
+            title: ev.title,
+            capacity: Number(ev.capacity),
+            registeredCount: Number(ev.registeredCount),
+            active: Boolean(ev.active),
+            isRegistered,
+            isAttended,
+            verifiedAttendanceCount: verifiedCount,
+          };
 
-            return mergeOnChainEventWithMetadata(baseOnChainEvent, {
+          loaded.push(
+            mergeOnChainEventWithMetadata(baseOnChainEvent, {
               chainId: MONAD_CHAIN_ID,
               contractAddress: CONTRACT_ADDRESS,
-            });
-          })
-        );
+            })
+          );
+        }
 
         // En yeni etkinlikler üstte
         setEvents(loaded.reverse());
@@ -263,7 +272,7 @@ export function AppProvider({
           const accounts = await provider.send("eth_accounts", []);
           const network = await provider.getNetwork();
           if (isMounted) setChainId(Number(network.chainId));
-          if (accounts.length > 0) {
+          if (accounts && accounts.length > 0 && accounts[0]) {
             currentAccount = ethers.getAddress(accounts[0]);
             accountRef.current = currentAccount;
             if (isMounted) setAccount(currentAccount);
@@ -277,12 +286,12 @@ export function AppProvider({
       try {
         const serverAuth = await checkServerSession();
         if (isMounted) {
-          if (serverAuth && serverAuth.authenticated) {
-            // Eğer cüzdan bağlıysa ve sunucu oturumunun cüzdanından farklıysa, eski oturumu geçersiz kıl
+          if (serverAuth && serverAuth.authenticated && serverAuth.walletAddress) {
+            const serverWallet = ethers.getAddress(serverAuth.walletAddress);
+            // Eğer bağlı bir cüzdan varsa ve sunucu oturumunun cüzdanından farklıysa, eski oturumu geçersiz kıl
             if (
               currentAccount &&
-              serverAuth.walletAddress &&
-              currentAccount.toLowerCase() !== serverAuth.walletAddress.toLowerCase()
+              currentAccount.toLowerCase() !== serverWallet.toLowerCase()
             ) {
               clearActiveAuthState();
               logoutOrganizerSiweSession().catch(() => {});
@@ -295,15 +304,11 @@ export function AppProvider({
             } else {
               setSessionState({
                 authenticated: true,
-                walletAddress: serverAuth.walletAddress,
+                walletAddress: serverWallet,
                 csrfToken: serverAuth.csrfToken,
                 loading: false,
               });
-              if (!currentAccount && serverAuth.walletAddress) {
-                currentAccount = serverAuth.walletAddress;
-                accountRef.current = currentAccount;
-                setAccount(serverAuth.walletAddress);
-              }
+              // Cüzdan bağlı değilse (currentAccount null), oturumu koru fakat cüzdanı bağlıymış gibi gösterme (ayrımı koru)
             }
           } else {
             setSessionState({
@@ -323,6 +328,10 @@ export function AppProvider({
             loading: false,
           });
         }
+      } finally {
+        if (isMounted) {
+          setSessionState((prev) => ({ ...prev, loading: false }));
+        }
       }
 
       await loadEvents(currentAccount);
@@ -340,7 +349,9 @@ export function AppProvider({
 
     const handleAccountsChanged = (accounts) => {
       const nextAcc =
-        accounts && accounts.length > 0 ? ethers.getAddress(accounts[0]) : null;
+        accounts && accounts.length > 0 && accounts[0]
+          ? ethers.getAddress(accounts[0])
+          : null;
 
       // Hesap değişmemişse gereksiz sıfırlama veya işlem yapma
       if (nextAcc?.toLowerCase() === accountRef.current?.toLowerCase()) {
@@ -523,6 +534,8 @@ export function AppProvider({
       csrfToken: null,
       loading: false,
     });
+    setUnreadNotificationCount(0);
+    setLiveNotification(null);
     setBanner({
       type: "info",
       message: "CampusPass SIWE oturumunuz başarıyla kapatıldı.",
@@ -540,6 +553,8 @@ export function AppProvider({
       csrfToken: null,
       loading: false,
     });
+    setUnreadNotificationCount(0);
+    setLiveNotification(null);
     setBanner({
       type: "info",
       message: "Cüzdan bağlantısı kesildi.",

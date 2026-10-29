@@ -1,178 +1,181 @@
 # CampusPass — Faz 15 Blokzincir Olay Okuma ve Cüzdan/SIWE Yaşam Döngüsü Hata Raporu
 
-**Tarih:** 26 Ekim 2026  
+**Tarih:** 29 Ekim 2026  
 **Dal (Branch):** `feature/phase-15-notifications`  
 **Hedef Blokzincir:** Monad Testnet (Chain ID: 10143)  
-**Akıllı Sözleşme Adresi:** `0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da`  
+**Akıllı Sözleşme Adresi:** `0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da` (Monad Vision Explorer üzerinde doğrulanmış ve canlı)  
+**RPC URL:** `https://testnet-rpc.monad.xyz`  
 
 ---
 
 ## 1. Kesin Kök Neden Analizi (Root Causes)
 
-### 1.1 Blokzincir Olay Okuma Hatası ("Etkinlikler blokzincirden okunurken hata oluştu: missing revert data")
+### 1.1 Blokzincir Hatası: "Akıllı sözleşmeye ulaşılamadı veya belirtilen adreste sözleşme kodu bulunamadı"
 
-Yapılan uçtan uca inceleme ve canlı RPC testleri sonucunda hatanın kesin nedenleri belirlenmiştir:
+Kullanıcının tarayıcısında etkinlik listesi veya profil verileri yüklenirken ara sıra çıkan bu hatanın kök nedenleri canlı RPC testleri, Ethers v6 davranışı ve kod izleme ile kesinleştirilmiştir:
 
-1. **Monad Testnet RPC `eth_getLogs` Blok Aralığı Kısıtlaması:**
-   - `src/context/AppContext.jsx` içerisindeki `loadEvents` fonksiyonunda doğrulanmış katılımcı sayılarını çekmek için `contract.queryFilter(filter, -50000)` çağrısı yapılmaktaydı.
-   - Monad Testnet RPC endpoint'i (`https://testnet-rpc.monad.xyz`), `eth_getLogs` isteklerini **en fazla 100 blok geriye dönük** olarak sınırlandırmaktadır (`code: -32614, message: "eth_getLogs is limited to a 100 range"`).
-   - Bu sınır aşıldığında RPC çağrısı reddedilmektedir.
-2. **Ethers.js v6 `missing revert data` İstisnası ve Eksik Hata Çevirisi:**
-   - Ethers.js v6'da bir view/call metodu boş veri (`0x`), geçersiz kontrat adresi, ağ uyuşmazlığı veya boş revert ile karşılaştığında `AbiCoder.getBuiltinCallException` çağrısı `missing revert data` mesajını üretir (`error.shortMessage`).
-   - `src/data/events.js` dosyasındaki `parseBlockchainError` fonksiyonu `missing revert data`, `could not decode result data` ve RPC bağlantı hatalarını tanımayarak doğrudan ham `missing revert data` string'ini kullanıcı arayüzüne basmaktaydı.
-3. **Ortam Değişkeni Geçersiz Kılma (Environment Variable Overrides) Eksikliği:**
-   - Proje kökünde `.env` içerisinde `VITE_CONTRACT_ADDRESS` ve `VITE_MONAD_RPC_URL` tanımlı olmasına rağmen, `src/data/events.js` ortam değişkenlerini okumayıp yalnızca `deployment.json` adresine başvurmaktaydı.
-4. **Topluluk Yönetim Sayfasında Sabitlenmiş Adres:**
-   - `src/pages/CommunityManagePage.jsx` içerisinde `linkContractAddress = "0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da"` ve `linkChainId = 10143` değerleri merkezi `events.js` konfigürasyonundan import edilmek yerine sabit kodlanmıştı (hardcoded).
-
----
-
-### 1.2 Cüzdan Bağlantısı ve SIWE Oturum Yaşam Döngüsü Sorunları
-
-Faz 15 bildirim ve gerçek zamanlı SSE akışı entegrasyonu sonrasında ortaya çıkan cüzdan ve oturum kararsızlıklarının kesin nedenleri:
-
-1. **`accountsChanged` Olayında Aşırı Agresif ve Koşulsuz Oturum Sıfırlama:**
-   - `AppContext.jsx` içerisindeki `accountsChanged` dinleyicisi, MetaMask'ın bağlantı anında veya kilit açıldığında mevcut hesap için tetiklediği bildirimlerde dahi (`nextAcc === account`), hesabın değişip değişmediğini kontrol etmeksizin koşulsuz olarak `clearActiveAuthState()`, `logoutOrganizerSiweSession()` ve `setSessionState({ authenticated: false })` çağrısı yapıyordu.
-   - Kullanıcı cüzdanını bağladığında veya SIWE imzasını tamamladığında, tetiklenen cüzdan olayları kullanıcının sunucu oturumunu derhal siliyordu.
-2. **`useEffect` Bağımlılık Döngüleri ve Çift Dinleyici (Duplicate Listener) Kaydı:**
-   - Dinleyici effect'i `[account, loadEvents]` bağımlılığına sahipti. `account` her güncellendiğinde dinleyiciler kaldırılıp yeniden ekleniyordu. Bazı cüzdan sağlayıcılarında `removeListener` yerine `off` desteği olduğundan sızıntı ve mükerrer tetiklenme riski mevcuttu.
-3. **İlk Yükleme ve SIWE Oturumu Geri Yükleme Yarış Durumu (Race Condition):**
-   - Sayfa ilk açıldığında `checkServerSession()` ile sunucu çerezinden önceki cüzdana ait oturum okunuyor, fakat o esnada bağlı olan MetaMask adresi (`eth_accounts`) farklı olsa bile oturum geçersiz kılınmadan yeni cüzdana atanabiliyordu. Bu durum, bildirimlerin ve yetkili oturumun farklı cüzdan kimliklerine sızmasına yol açabilecek bir güvenlik açığı oluşturuyordu.
-4. **Zorunlu Sayfa Yenileme (`window.location.reload()`) ve Router Remounting:**
-   - `Navbar.jsx` ve `AccountSettingsPage.jsx` bileşenlerinde SIWE oturumu açıldıktan sonra `AppContext` içinde oturum durumunu güncelleyen bir fonksiyon bulunmadığı için `window.location.reload()` çağrısı yapılıyordu. Bu durum tüm React Router durumunu sıfırlıyor, effect'leri tekrar çalıştırıyor ve gereksiz render döngülerine neden oluyordu.
-5. **SSE Akışında Sonsuz Yeniden Bağlantı Döngüsü (Reconnect Loop):**
-   - Oturum kapandığında veya 401 yetkisiz duruma düşüldüğünde istemci tarafındaki standart `EventSource` otomatik olarak sürekli yeniden bağlanmaya çalışıyor ve ağ trafiğini meşgul ediyordu.
+1. **Monad Public RPC Hız Limiti (Rate Limiting - 15 req/sec):**
+   - Monad Testnet genel RPC endpoint'i (`https://testnet-rpc.monad.xyz`), IP başına saniyede en fazla **15 istek** (`requests limited to 15/sec`, RPC hata kodu: `-32011`) sınırını katı şekilde uygulamaktadır.
+   - Sayfa ilk açıldığında veya rota geçişlerinde `loadEvents`, `fetchStudentProfileData` veya sayfa bileşenleri birden fazla paralel çağrı (`eth_chainId`, `nextEventId`, `contract.events`, `contract.registered`, `contract.attended`, `queryFilter`) başlattığında bu 15 req/sn sınırı anında aşılmaktadır.
+2. **Ethers.js v6 `CALL_EXCEPTION` ve `missing revert data` Sarmalaması:**
+   - Ethers v6, RPC sunucusundan `-32011` rate limit JSON-RPC hatası aldığında bunu dahili olarak bir `CALL_EXCEPTION` istisnasına sarmalamakta ve hata nesnesinin `shortMessage` alanına `"missing revert data"` yazmaktadır.
+   - Ham RPC hatası ise nesnenin derinliklerinde `error.info.error.code = -32011` ve `error.info.error.message = "requests limited to 15/sec"` olarak kalmaktadır.
+3. **`parseBlockchainError` Önceliklendirme Hatası (False Positive Translation):**
+   - Eski `parseBlockchainError` mantığı, rate limit ve ağ kontrolünden önce doğrudan `rawMessage.includes("missing revert data")` kontrolünü çalıştırmaktaydı.
+   - Sonuç olarak, RPC aslında sözleşmenin yokluğundan değil, **hız sınırı aşıldığından** isteği reddettiği halde, kullanıcıya yanıltıcı bir şekilde:
+     > *"Akıllı sözleşmeye ulaşılamadı veya belirtilen adreste sözleşme kodu bulunamadı. Lütfen ağın Monad Testnet (10143) olduğunu ve sözleşme adresini kontrol edin."*
+     mesajı gösterilmekteydi.
+4. **Önbelleklenmeyen JsonRpcProvider ve Gereksiz `eth_chainId` İstekleri:**
+   - Her sözleşme çağrısında yeni `new ethers.JsonRpcProvider(rpcUrl)` oluşturulduğunda Ethers otomatik olarak `eth_chainId` ağ tespit isteği göndererek RPC kotasını ikiye katlamaktaydı.
 
 ---
 
-### 1.3 Rotalar Arası Cüzdan ve Oturum Durumu Tutarlılığı Sorunu (Manuel Test Usability Regresyonu)
+### 1.2 Cüzdan Bağlantısı, SIWE ve Rotalar Arası Durum Tutarsızlığı
 
-İlk tur manual browser testinde tespit edilen "/profile veya /organizer sayfasına gidildiğinde cüzdan bağlı olmasına rağmen cüzdan bağlantı istemi gösterilmesi" ve "/events/:eventId detay sayfasına erişim" sorunlarının kök nedenleri:
+Navbar bağlı bir cüzdan gösterirken `/profile` ve `/organizer` sayfalarında "Cüzdan Bağla" çıkmasının kesin nedenleri:
 
-1. **Phase 12.5 React Router Geçişinde Sayfa Bileşenlerinin Prop-Drilling'e Bağımlı Kalması:**
-   - `src/pages/StudentProfile.jsx`, `OrganizerDashboardPage.jsx`, `OrganizerEventAnalyticsPage.jsx`, `CommunityDiscoveryPage.jsx`, `CommunityProfilePage.jsx` ve `CommunityManagePage.jsx` bileşenleri `account`, `chainId`, `onConnectWallet` vb. değerleri doğrudan prop olarak kabul ediyordu.
-   - `AppRoutes.jsx` rotalarında `<Route path="profile" element={<ProtectedRoute><StudentProfile defaultTab="events" /></ProtectedRoute>} />` şeklinde render edilirken bu bileşenlere `account` prop'u aktarılmıyordu.
-   - `ProtectedRoute` ve `OrganizerGuard` context içindeki `account` değerini doğrulayıp geçiş izni verse de, içteki sayfa bileşenleri `useAppContext` çağırmadığı için `account` değeri `undefined` kalıyordu.
-   - Sonuç olarak `StudentProfile` içindeki `if (!account)` kontrolü `true` dönüyor ve kullanıcıya cüzdanı bağlı olmasına rağmen "Profili Görmek İçin Cüzdan Bağla" ekranı gösteriliyordu. `/organizer` dashboard'u da aynı sebeple "Organizatör Cüzdanını Bağla" durumuna düşüyordu.
-2. **Etkinlik Detay Sayfasında (`EventPage.jsx`) Tekil Yükleme ve Canlı Kayıt Durumu Senkronizasyon Eksikliği:**
-   - `AppContext` ilk açılışta `initialLoadingEvents: false` ile başladığı için `/events/:eventId` sayfasına doğrudan girildiğinde veya yenileme yapıldığında, `loadingEvents` henüz `false` iken `event` null dönüyor ve sayfa derhal "Etkinlik bulunamadı" durumuna geçiyordu.
-   - Kullanıcı ana sayfada cüzdan bağladıktan sonra `/events/:eventId` sayfasına gittiğinde, kullanıcının kayıt (`isRegistered`) ve katılım (`isAttended`) durumu yalnızca `context.events` önbelleğindeki statik bayraklara bakıyordu.
-   - `EventPage` bileşeninde cüzdan bağlı olmadığında sağ aksiyon kutucuğunda "Cüzdan Bağla" butonu bulunmuyor, sadece devre dışı bir buton gösteriliyordu.
-3. **`loadEvents` Fonksiyonunda Stale Closure (Eski Kapanış) Riski:**
-   - `AppContext.jsx` içerisindeki `loadEvents = useCallback(async (currentAccount) => ...)` fonksiyonu çağrıldığında parametre verilmezse varsayılan değer tanımlı değildi. Bu durum parametresiz çağrılarda `currentAccount`'ın `undefined` kalmasına ve `isRegistered` sorgularının atlanmasına sebep olabiliyordu.
+1. **SIWE Oturumu ile Canlı Web3 Sağlayıcı Cüzdanının Karıştırılması:**
+   - `AppContext.jsx` içerisindeki `restoreServerSession`, sayfa yenilendiğinde sunucudaki SIWE çerezinden gelen adresi `setAccount(serverAuth.walletAddress)` ile doğrudan `account` state'ine yazıyordu.
+   - Ancak o anda tarayıcıda MetaMask bağlı olmayabilirdi (veya kilitliydi). Navbar `account` değerine bakarak cüzdanı bağlı gösteriyor, fakat sayfa bileşenleri (`StudentProfile`, `OrganizerDashboardPage`) Web3 signer veya live provider üzerinden işlem yapmaya kalktığında başarısız oluyordu.
+2. **`sessionState.loading` Sırasında Erken Render (Race Condition):**
+   - Sayfa ilk açıldığında `sessionState.loading = true` iken `account` başlangıçta `null` olmaktadır.
+   - `StudentProfile`, `OrganizerDashboardPage` ve `OrganizerEventAnalyticsPage` bileşenleri `sessionState.loading` durumunu kontrol etmeyip derhal `if (!account)` koşulunu değerlendiriyor ve kullanıcıya milisaniyelerce "Cüzdan Bağla" boş durumunu flaşlatıyordu.
+3. **Organizatör Sayfasında Mount Anında Otomatik İstenmeyen SIWE İmzası:**
+   - `OrganizerDashboardPage` bileşeni mount olduğunda `loadDashboard` doğrudan `ensureSiwe()` fonksiyonunu tetikliyor, bu da kullanıcının onayına veya buton tıklamasına bağlı olmaksızın anında MetaMask imza popup'ı açmaya çalışıyordu. İmza reddedildiğinde veya oturum yokken sayfa hata vererek kilitleniyordu.
+4. **5 Temel Durumun Ayrımının Net Olmaması:**
+   - Uygulama şu 5 durumu birbirinden ayrı değerlendirmelidir:
+     1. *Oturum yükleme devam ediyor:* (`sessionState.loading === true`)
+     2. *Cüzdan bağlı değil:* (`!account`)
+     3. *Yanlış ağ:* (`account && chainId !== 10143`)
+     4. *SIWE oturumu açılmamış:* (`account && !sessionState.authenticated`)
+     5. *Yetkisiz organizatör:* (Başkasına ait etkinlik analitiği - 403 Forbidden)
 
 ---
 
 ## 2. Doğrulama Kanıtları (Evidence)
 
-1. **Canlı Monad Testnet RPC Kontrolü:**
+1. **Canlı Monad Testnet RPC Kotası ve Bytecode Doğrulaması:**
    - RPC URL: `https://testnet-rpc.monad.xyz`
-   - RPC Yanıtı: HTTP 200 OK, `eth_chainId` -> `0x279f` (10143)
    - Sözleşme Adresi: `0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da`
-   - Dağıtılmış Baytkod Boyutu: 10,708 bayt (Sözleşme canlı ve erişilebilir durumda).
-   - `nextEventId()` çağrısı: Başarılı, dönen değer: `4n` (3 adet on-chain etkinlik mevcut).
-   - `events(1)`, `events(2)`, `events(3)` çağrıları: Başarılı, geçerli struct kayıtları dönüyor.
-   - `AttendanceMarked -50000` çağrısı: Hata `eth_getLogs is limited to a 100 range` (RPC kısıtı doğrulandı).
-   - `AttendanceMarked -90` çağrısı: Başarılı, hata vermeden tamamlandı.
-
-2. **Cüzdan / SIWE İzolasyon Kontrolü:**
-   - `accountsChanged` olayında aynı cüzdan adresi geldiğinde oturumun korunması doğrulandı.
-   - Cüzdan adresi değiştiğinde önceki oturumun sunucu ve istemci tarafında derhal geçersiz kılınması sağlandı.
-   - `handleSiweLogin` AppContext düzeyine taşınarak sayfa yenilemesi olmaksızın reaktif state güncellemesi sağlandı.
+   - Dağıtılmış Baytkod: `0x608060...` (10,708 bayt uzunluğunda, kontrat aktif).
+   - Eşzamanlı 30 çağrı yapıldığında alınan ham RPC cevabı:
+     `{ code: -32011, message: "requests limited to 15/sec" }`
+   - Ethers.js v6 istisnası:
+     `code: "CALL_EXCEPTION", shortMessage: "missing revert data", info: { error: { code: -32011, message: "requests limited to 15/sec" } }`
+   - Böylece `missing revert data` hatasının sözleşme yokluğundan değil, rate limit'ten kaynaklandığı ampirik olarak ispatlandı.
+2. **CORS ve HTTP Başlıkları:**
+   - `OPTIONS` ve `POST` isteklerinde `http://localhost:5173` için `Access-Control-Allow-Origin: *` cevabı alınarak CORS engeli olmadığı doğrulandı.
 
 ---
 
-## 3. Değiştirilen Dosyalar
+## 3. Yapılan Düzeltmeler
 
-### Birinci Tur Düzeltmeleri (Blokzincir & SIWE Temel Yaşam Döngüsü)
+### 3.1 Blokzincir Katmanı (`src/data/events.js` & `src/utils/studentProfile.js`)
+1. **Statik Sağlayıcı ve Sözleşme Önbellekleme:**
+   - `getReadOnlyProvider()` fonksiyonunda `new ethers.JsonRpcProvider(MONAD_RPC_URL, { chainId: 10143, name: "monad-testnet" }, { staticNetwork: true })` yapılandırması kullanılarak gereksiz `eth_chainId` istekleri sıfırlandı.
+   - `getReadOnlyContract()` ile sözleşme nesnesi tekil (singleton) olarak önbelleklendi.
+2. **`callWithRetry` ile Üstel Geri Çekilme (Exponential Backoff):**
+   - `-32011` (rate limit) ve `429` hatalarını otomatik yakalayıp 3 defaya kadar üstel gecikmeyle (200ms, 400ms, 800ms) yeniden deneyen mekanizma eklendi.
+3. **Sıralı / Korumalı Olay ve Kayıt Okuması:**
+   - `AppContext.jsx` içerisindeki `loadEvents` ve `studentProfile.js` içerisindeki `fetchStudentProfileData`, paralel `Promise.all` yerine sıralı ve retry korumalı döngülere dönüştürüldü.
+   - İsteğe bağlı `queryFilter` log taramalarının başarısız olması durumunda ana etkinlik veya profil akışının kesilmesi engellendi (`try-catch` koruması).
+4. **Doğru Hata Çevirisi (`parseBlockchainError`):**
+   - Rate limit `-32011`, `requests limited to`, `429` ve ağ bağlantı hataları, `missing revert data` kontrolünden **önce** değerlendirildi.
+   - Rate limit durumunda doğru Türkçe hata mesajı:
+     > *"Monad Testnet RPC istek veya blok aralığı sınırı aşıldı (en fazla 15 istek/sn). Lütfen birkaç saniye sonra tekrar deneyin."*
+     dönmesi sağlandı.
+
+### 3.2 Cüzdan ve SIWE Durum Ayrımı (`AppContext.jsx`, Guards, Pages)
+1. **Canlı Cüzdan ve SIWE Oturumu Ayrımı:**
+   - `init()` ve `handleAccountsChanged` fonksiyonlarında `account` yalnızca `window.ethereum` sağlayıcısının canlı `eth_accounts` değerine bağlandı.
+   - Sunucu SIWE oturumu ise bağımsız olarak `sessionState` (`authenticated`, `walletAddress`, `csrfToken`, `loading`) altında tutuldu. Cüzdan adresi ile oturum adresi eşleşmiyorsa eski oturum güvenle temizlendi.
+2. **`sessionState.loading` Desteği:**
+   - `ProtectedRoute.jsx`, `OrganizerGuard.jsx`, `StudentProfile.jsx`, `OrganizerDashboardPage.jsx` ve `OrganizerEventAnalyticsPage.jsx` bileşenlerinde `sessionState.loading` süresince yükleme animasyonu gösterilerek erken "Cüzdan Bağla" flaşlaması önlendi.
+3. **5 Durumun Görsel Ayrımı:**
+   - `OrganizerGuard`:
+     - Oturum yüklenirken -> Yükleme göstergesi
+     - Cüzdan yokken -> "Organizatör Cüzdan Bağlantısı Gerekli"
+     - Yanlış ağdayken -> "Monad Testnet (10143) Ağına Geçin"
+     - SIWE yokken -> "SIWE ile Giriş Yapın" butonu
+     - Etkinlik başkasına aitse -> "403 Forbidden"
+4. **Kimlik Temizliği (Cross-Wallet Leakage Protection):**
+   - `handleLogout` ve `handleDisconnectWallet` fonksiyonlarında `unreadNotificationCount = 0` ve `liveNotification = null` sıfırlanarak SSE akışının bağlantısı koparıldı; cüzdan değişiminde bildirim sızıntısı engellendi.
+
+---
+
+## 4. Değiştirilen Dosyalar
+
 1. `src/data/events.js`
-   - `VITE_MONAD_CHAIN_ID`, `VITE_MONAD_RPC_URL`, `VITE_MONAD_EXPLORER_URL` ve `VITE_CONTRACT_ADDRESS` ortam değişkeni geçersiz kılma (override) desteği eklendi.
-   - `parseBlockchainError` geliştirilerek: eksik sözleşme dağıtımı / `missing revert data`, RPC bağlantı kesintileri, yanlış ağ (Chain ID mismatch), RPC blok aralığı/rate limit ve SIWE oturum hataları için kullanıcı dostu, açıklayıcı hata mesajları sağlandı.
-2. `src/utils/apiClient.js`
-   - `ensureSiweSession` başarılı olduğunda sekmeler arası `LOGIN` olayı yayınlanması sağlandı.
-   - `connectNotificationStream` hata durumunda `readyState === CLOSED` kontrolüyle sonsuz reconnect döngüsü engellendi.
-3. `src/layouts/RootLayout.jsx`
-   - `AppContext`'ten `handleSiweLogin` fonksiyonu alınarak `Navbar` bileşenine `onSiweLogin` prop'u olarak iletildi.
-4. `src/components/Navbar.jsx`
-   - `onSiweLogin` prop'u kabul edilerek `handleQuickSiweLogin` içinde sayfa yenileme (`window.location.reload()`) kaldırıldı; reaktif oturum açma sağlandı.
-5. `src/pages/AccountSettingsPage.jsx`
-   - `useAppContext` üzerinden `handleSiweLogin` kullanılarak hızlı oturum açmada sayfa yenilemesi (`window.location.reload()`) kaldırıldı.
-6. `src/pages/NotificationsPage.jsx`
-   - Bildirim yükleme fonksiyonuna `account` bağımlılığı eklenerek cüzdan değişiminde veya çıkışta bildirimlerin diğer cüzdanlara sızması engellendi.
-7. `src/pages/CommunityManagePage.jsx`
-   - Sabit kodlanmış adres ve Chain ID yerine `CONTRACT_ADDRESS` ve `MONAD_CHAIN_ID` import edildi.
-
-### İkinci Tur Düzeltmeleri (Rotalar Arası Cüzdan/Oturum Tutarlılığı)
-8. `src/context/AppContext.jsx`
-   - `initialLoadingEvents` varsayılan değeri `true` yapıldı; böylece ilk render'da sayfa bileşenleri zamansız "Etkinlik bulunamadı" durumuna düşmek yerine yükleme göstergesi sunar.
-   - `loadEvents` içinde parametresiz çağrılarda `targetAccount = currentAccount !== undefined ? currentAccount : accountRef.current;` kullanılarak stale closure riski giderildi.
-   - Monad Testnet RPC sınırına uygun olarak `-90` log aralığı korundu.
-   - `accountRef` ile gereksiz dinleyici sıfırlama döngüleri engellendi.
-9. `src/pages/StudentProfile.jsx`
-   - `useAppContext` bağlandı; `account`, `chainId`, `onConnectWallet`, `onSwitchNetwork`, `isConnecting`, `onSelectEvent`, `onExploreEvents` context'ten yedeklendi.
-   - Sayfaya `/profile` üzerinden gidildiğinde cüzdan bağlıysa cüzdan kimliği, istatistikler ve sertifikalar derhal tanınır hale getirildi.
-10. `src/pages/OrganizerDashboardPage.jsx`
-    - `useAppContext` bağlandı; `account`, `onConnectWallet`, `isConnecting`, `chainId` context'ten tüketildi.
-    - `/organizer` sayfasına gidildiğinde kullanıcı cüzdan bağlıysa panel analitiği ve CSV araçları anında yüklenir hale getirildi.
-11. `src/pages/OrganizerEventAnalyticsPage.jsx`
-    - `useAppContext` bağlandı; `account` context'ten tüketildi. Parametre olmadan açıldığında erkenden cüzdan bağlantı uyarısına düşmesi engellendi.
-12. `src/pages/CommunityDiscoveryPage.jsx`, `CommunityProfilePage.jsx` ve `CommunityManagePage.jsx`
-    - `useAppContext` bağlanarak `account` ve `onConnectWallet` yetkilendirmesi rotalar arası kesintisiz hale getirildi.
-13. `src/pages/EventPage.jsx`
-    - Tekil etkinlik fallback'i eklendi (`contract.events(targetEventId)` ve metadata birleştirme). Doğrudan URL `/events/:eventId` ile gidildiğinde veya sayfa yenilendiğinde "Etkinlik bulunamadı" hatası engellendi.
-    - Canlı on-chain kayıt ve katılım durumu denetleyicisi (`contract.registered` & `contract.attended`) eklenerek `isRegistered` ve `isAttended` bayrakları cüzdan değişimlerinde anlık güncellenir kılındı.
-    - Cüzdan bağlı değilken sağ aksiyon kartına "Cüzdan Bağla" butonu eklendi.
-    - Etkinlik düzenleme formu state'leri `event` yüklendiğinde otomatik senkronize edildi.
-14. `src/components/EventCard.jsx` & `src/pages/HomePage.jsx`
-    - `<Link to={/events/${event.id}}>` tıklamasında gereksiz çift `navigate()` çağrısı engellendi.
-15. `test/Phase15BlockchainAndWalletFix.js`
-    - 6 yeni rota durumu regresyon testi eklenerek toplam test sayısı 20'ye çıkarıldı.
+   - `callWithRetry` eklendi.
+   - `getReadOnlyProvider` (`staticNetwork: true`) ve `getReadOnlyContract` önbelleklendi.
+   - `parseBlockchainError` hata öncelikleri düzeltildi.
+2. `src/context/AppContext.jsx`
+   - `account` ve `sessionState` yaşam döngüleri ayrıştırıldı.
+   - `loadEvents` sıralı ve `callWithRetry` korumalı hale getirildi.
+   - `handleLogout` ve `handleDisconnectWallet` bildirim durumlarını sıfırlar kılındı.
+   - `AppProvider`'a `initialChainId` desteği eklendi.
+3. `src/components/guards/OrganizerGuard.jsx`
+   - 5 durum ayrımı uygulandı (loading, no wallet, wrong network, no SIWE, 403 forbidden).
+   - `eventId` parametresi hem URL'den hem prop'tan okunabilir yapıldı.
+4. `src/components/guards/ProtectedRoute.jsx`
+   - `sessionState.loading` koruması sağlandı.
+5. `src/pages/StudentProfile.jsx`
+   - `sessionState.loading` durumunda erken "Cüzdan Bağla" görünümü engellendi.
+6. `src/pages/OrganizerDashboardPage.jsx`
+   - `sessionState.loading` koruması eklendi.
+7. `src/pages/OrganizerEventAnalyticsPage.jsx`
+   - `sessionState.loading` koruması eklendi.
+8. `src/pages/EventPage.jsx`
+   - Tekil etkinlik ve kayıt durumu sorguları `callWithRetry` ile korundu.
+9. `src/utils/studentProfile.js`
+   - `callWithRetry` entegrasyonu, sıralı/kontrollü zincir sorguları ve hata korumalı log taraması uygulandı.
+10. `server/.env.example`
+    - Standart RPC ve kontrat yapılandırması belgelendi.
+11. `test/Phase15BlockchainAndWalletFix.js`
+    - Rate limit (-32011) çevirisi, `callWithRetry`, ve `OrganizerGuard` 5 durum ayrımını doğrulayan yeni regresyon testleri eklendi.
 
 ---
 
-## 4. Test Sonuçları
-
-Aşağıdaki doğrulama komutları eksiksiz çalıştırılmıştır:
+## 5. Test ve Doğrulama Çıktıları
 
 ```bash
-# 1. Otomatik Mocha / Hardhat Test Paketi
+# 1. Test Paketi (Mocha / Hardhat)
 npm test
--> 176 passing (8s) (Tüm testler ve 20 adet Faz 15 regresyon testi yeşil)
+-> 183 passing (10s) (Tüm testler ve Faz 15 regresyon testleri yeşil)
 
-# 2. Linter Kontrolü
+# 2. Linter Denetimi
 npm run lint
--> 0 error, 84 warning (0 hata ile tamamlandı)
+-> 0 error, 84 warning (0 hata)
 
-# 3. Üretim Paketi Derlemesi (Vite Build)
+# 3. Üretim Derlemesi (Vite Build)
 npm run build
--> built in 1.40s (dist/assets hatasız derlendi)
+-> built in 696ms (dist/assets hatasız üretildi)
 
 # 4. Prisma Şema Doğrulaması
 npm run db:validate
--> Başarılı! Doğrulanan modeller (13)
+-> [PRISMA VALIDATE] Başarılı! Doğrulanan modeller (13)
 
 # 5. PostgreSQL Entegrasyon Testi
 npm run test:postgres
--> Gerçek PostgreSQL ortamı hazır olduğunda çalışacak şekilde raporlandı
+-> [BİLGİ / ATLANDI] Gerçek PostgreSQL sunucusu yerel ortamda çalışmadığı için yönerge gereği doğru şekilde ATLANDI olarak raporlandı.
 ```
 
 ---
 
-## 5. Kalan Manuel Doğrulama Gereksinimleri
+## 6. Kalan Manuel Doğrulama Adımları (Short Manual Test Sequence)
 
-> **Önemli Uyarı:** Otomasyon ve Node.js testleri başarılı olmasına rağmen aşağıdaki senaryolar gerçek tarayıcı ve MetaMask uzantısı gerektirmektedir:
-1. **Tarayıcı Tabanlı MetaMask Etkileşimi:**
-   - Kullanıcının tarayıcısında MetaMask eklentisi ile açıp "Cüzdan Bağla" butonuna basması.
-   - Monad Testnet ağı otomatik ekleme/değiştirme bildiriminin MetaMask penceresinde onaylanması.
-2. **SIWE Girişi ve Rotalar Arası Gezinme:**
-   - Üst menüden "SIWE İmzala" yapıldıktan sonra `/profile` ve `/organizer` rotalarına tıklandığında cüzdanın bağlı olarak tanındığının ve gösterge panellerinin hatasız açıldığının doğrulanması.
-   - `/events/1` detay sayfasına tıklandığında cüzdan durumunun ve "Hemen Kaydol" butonunun etkin olduğunun gözlemlenmesi.
-3. **Canlı SSE Akışı ve Tarayıcı Bildirimleri:**
-   - Tarayıcının Network sekmesinde `/api/notifications/stream` SSE bağlantısının açık kalması ve cüzdan bağlantısı kesildiğinde bağlantının kapatılması.
+Otomasyon testleri eksiksiz geçmiştir. Tarayıcı ve MetaMask ortamında sırayla şu test adımları gerçekleştirilmelidir:
 
----
-
-## 6. Altyapı Notları ve Özet
-
-- Akıllı sözleşme (`0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da`) Monad Testnet üzerinde sağlam durumdadır; yeniden dağıtım veya kontrat değişikliği yapılmamıştır.
-- Tüm değişiklikler yerel Git ortamında doğrulanmış ve Phase 15 dalı üzerinde korunmuştur.
+1. **Ana Sayfa Etkinlik Listesi:**
+   - Tarayıcıda `http://localhost:5173` açılır.
+   - Ana sayfadaki 3 etkinliğin ("Monad Blokzincir Hackathonu", "Web3 AI Ajanları Atölyesi", "Sıfır Bilgi İspatları Semineri") Monad Testnet'ten hatasız yüklendiği ve "sözleşme kodu bulunamadı" uyarısının çıkmadığı görülür.
+2. **MetaMask Cüzdan Bağlantısı:**
+   - Sağ üstteki "Cüzdanı Bağla" butonuna basılır ve MetaMask'ta Monad Testnet (10143) seçilerek bağlanılır.
+   - Navbar'da cüzdan adresinin kısaltılmış hali (`0x...`) ve yeşil testnet rozeti görüntülenir.
+3. **Rotalar Arası Gezinme:**
+   - Navbar'dan sırasıyla `Öğrenci Paneli` (`/profile`), `Organizatör` (`/organizer`) ve bir etkinliğin detayına (`/events/1`) tıklanır.
+   - Sayfalarda cüzdanın bağlı kalmaya devam ettiği, zamansız "Cüzdan Bağla" flaşlaması yaşanmadığı doğrulanır.
+4. **Organizatör SIWE Girişi:**
+   - `/organizer` rotasında SIWE imza butonu tıklandığında MetaMask popup'ının açıldığı, imza onaylandıktan sonra sayfa yenilenmeden dashboard verilerinin yüklendiği görülür.
+5. **Cüzdan Değişimi ve Çıkış:**
+   - MetaMask'tan farklı bir hesaba geçildiğinde veya "Çıkış Yap" dendiğinde bildirim sayacının sıfırlandığı ve önceki oturuma ait hiçbir verinin kalmadığı gözlemlenir.
