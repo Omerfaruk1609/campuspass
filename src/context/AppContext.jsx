@@ -29,6 +29,7 @@ import {
   ensureOrganizerSiweSession,
   fetchEventsMetadataFromBackend,
   fetchUnreadNotificationCountFromBackend,
+  isValidSiweSigner,
   logoutOrganizerSiweSession,
   markAllNotificationsAsReadOnBackend,
   markNotificationAsReadOnBackend,
@@ -270,13 +271,13 @@ export function AppProvider({
         try {
           const provider = new ethers.BrowserProvider(window.ethereum);
           const accounts = await provider.send("eth_accounts", []);
-          const network = await provider.getNetwork();
-          if (isMounted) setChainId(Number(network.chainId));
           if (accounts && accounts.length > 0 && accounts[0]) {
             currentAccount = ethers.getAddress(accounts[0]);
             accountRef.current = currentAccount;
             if (isMounted) setAccount(currentAccount);
           }
+          const network = await provider.getNetwork();
+          if (isMounted) setChainId(Number(network.chainId));
         } catch {
           // Cüzdan okuma hatası olursa salt-okunur modda devam et
         }
@@ -453,58 +454,87 @@ export function AppProvider({
     }
   }, []);
 
-  // Sekmeler arası oturum kapatma senkronizasyonunu dinle
+  // Sekmeler arası ve aynı sekme içi SIWE oturum senkronizasyonunu dinle
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+
+    const applyAuthPayload = (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      if (payload.type === "LOGOUT") {
+        clearActiveAuthState();
+        setSessionState({
+          authenticated: false,
+          walletAddress: null,
+          csrfToken: null,
+          loading: false,
+        });
+      } else if (payload.type === "LOGIN" && payload.walletAddress) {
+        if (payload.csrfToken) {
+          setSessionState({
+            authenticated: true,
+            walletAddress: ethers.getAddress(payload.walletAddress),
+            csrfToken: payload.csrfToken,
+            loading: false,
+          });
+        } else {
+          checkServerSession()
+            .then((auth) => {
+              if (auth && auth.authenticated) {
+                setSessionState({
+                  authenticated: true,
+                  walletAddress: auth.walletAddress,
+                  csrfToken: auth.csrfToken,
+                  loading: false,
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    };
 
     const handleStorageChange = (e) => {
       if (e.key === AUTH_STORAGE_EVENT_KEY) {
         try {
           const payload = JSON.parse(e.newValue || "{}");
-          if (payload.type === "LOGOUT") {
-            clearActiveAuthState();
-            setSessionState({
-              authenticated: false,
-              walletAddress: null,
-              csrfToken: null,
-              loading: false,
-            });
-          } else if (payload.type === "LOGIN" && payload.walletAddress) {
-            checkServerSession()
-              .then((auth) => {
-                if (auth && auth.authenticated) {
-                  setSessionState({
-                    authenticated: true,
-                    walletAddress: auth.walletAddress,
-                    csrfToken: auth.csrfToken,
-                    loading: false,
-                  });
-                }
-              })
-              .catch(() => {});
-          }
+          applyAuthPayload(payload);
         } catch {
           // JSON ayrıştırma hatası göz ardı edilir
         }
       }
     };
 
+    const handleSameTabAuthEvent = (e) => {
+      applyAuthPayload(e?.detail);
+    };
+
     window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(AUTH_STORAGE_EVENT_KEY, handleSameTabAuthEvent);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(AUTH_STORAGE_EVENT_KEY, handleSameTabAuthEvent);
     };
   }, []);
 
   // SIWE oturumu başlat
   const handleSiweLogin = useCallback(async (customSigner = null) => {
-    const currentAcc = accountRef.current;
-    if (!currentAcc) {
-      throw new Error("SIWE kimlik doğrulaması için önce cüzdanınızı bağlayın.");
-    }
-    let signer = customSigner;
+    let signer = isValidSiweSigner(customSigner) ? customSigner : null;
     if (!signer && typeof window !== "undefined" && window.ethereum) {
       const provider = new ethers.BrowserProvider(window.ethereum);
       signer = await provider.getSigner();
+    }
+    let currentAcc = accountRef.current || account;
+    if (!currentAcc && signer && typeof signer.getAddress === "function") {
+      try {
+        currentAcc = ethers.getAddress(await signer.getAddress());
+        accountRef.current = currentAcc;
+        setAccount(currentAcc);
+      } catch {
+        // Cüzdan adresi okunamadıysa alt satırda hata fırlatılır
+      }
+    }
+    if (!currentAcc) {
+      throw new Error("SIWE kimlik doğrulaması için önce cüzdanınızı bağlayın.");
     }
     const auth = await ensureOrganizerSiweSession({
       signer,
@@ -513,12 +543,12 @@ export function AppProvider({
     });
     setSessionState({
       authenticated: true,
-      walletAddress: auth.walletAddress,
+      walletAddress: ethers.getAddress(auth.walletAddress),
       csrfToken: auth.csrfToken,
       loading: false,
     });
     return auth;
-  }, []);
+  }, [account]);
 
   // Sunucu SIWE oturumunu güvenle sonlandır
   const handleLogout = useCallback(async () => {

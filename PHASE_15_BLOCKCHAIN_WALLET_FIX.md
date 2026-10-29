@@ -103,36 +103,80 @@ Navbar bağlı bir cüzdan gösterirken `/profile` ve `/organizer` sayfalarında
 
 ---
 
+## 3.5 SIWE Oturum Açma Regresyonu — Kök Neden, HTTP İzleme ve Düzeltme
+
+### A. Belirti (Symptom)
+Manuel test sırasında `/organizer` koruma ekranındaki **"SIWE ile Giriş Yap"** butonuna tıklandığında (veya doğrudan `ensureSiweSession` tetiklendiğinde) MetaMask imza penceresi açılmıyor veya SIWE oturumu aktif hale gelmiyordu.
+
+### B. Uçtan Uca SIWE HTTP ve İstemci İzlemesi (Exact Trace)
+1. **Sunucu Tarafı (Backend API & PostgreSQL Doğrulaması):**
+   - `GET http://localhost:3001/api/auth/nonce?walletAddress=0x...`
+     - **Durum Kodu:** `200 OK`
+     - **Yanıt Gövdesi:** `{"success":true,"data":{"nonce":"...","domain":"localhost:5173","uri":"http://localhost:5173","chainId":10143,"issuedAt":"...","expiresAt":"..."}}`
+   - `POST http://localhost:3001/api/auth/verify`
+     - **Durum Kodu:** `200 OK`
+     - **Set-Cookie Başlığı:** `campuspass_session=<64-hex-token>; Max-Age=86400; Path=/; HttpOnly; SameSite=Lax` (`secure: false` development ortamında)
+     - **CORS Başlıkları:** `Access-Control-Allow-Origin: http://localhost:5173`, `Access-Control-Allow-Credentials: true`
+     - **Yanıt Gövdesi:** `{"success":true,"data":{"authenticated":true,"walletAddress":"0x...","chainId":10143,"csrfToken":"...","expiresAt":"..."}}`
+   - `GET http://localhost:3001/api/auth/session` (Cookie ile)
+     - **Durum Kodu:** `200 OK`
+     - **Yanıt Gövdesi:** `{"success":true,"data":{"authenticated":true,"walletAddress":"0x...","chainId":10143,"csrfToken":"...","expiresAt":"..."}}`
+
+2. **İstemci Tarafı Kesin Kök Nedenler (Exact Root Causes):**
+   - **Kök Neden 1 (`OrganizerGuard.jsx` -> `handleSiweLogin` -> `ensureSiweSession` Signer Parametresi Kirliliği):**
+     - `375998b` commit'inde `src/components/guards/OrganizerGuard.jsx` içine eklenen `<button onClick={handleSiweLogin}>` ifadesi, butona tıklandığında React'in `SyntheticBaseEvent` nesnesini (`{ _reactName: "onClick", type: "click", ... }`) `handleSiweLogin(customSigner = null)` fonksiyonuna birinci parametre (`customSigner`) olarak geçiriyordu.
+     - `AppContext.jsx` içindeki `if (!signer && ...)` ve `src/utils/apiClient.js` içindeki `if (!effectiveSigner && ...)` kontrollerinde `SyntheticBaseEvent` nesnesi `truthy` olduğu için `new ethers.BrowserProvider(window.ethereum).getSigner()` çağrısı **tamamen atlanıyordu**.
+     - `GET /api/auth/session` (`200 OK`) ve `GET /api/auth/nonce` (`200 OK`) tamamlandıktan hemen sonra `src/utils/apiClient.js:348` satırındaki `await effectiveSigner.signMessage(siweMessage)` çağrısı **`TypeError: effectiveSigner.signMessage is not a function`** hatası fırlatıyordu. Bu nedenle MetaMask imza penceresi hiç açılmıyor ve `POST /api/auth/verify` isteği hiç gönderilemiyordu.
+   - **Kök Neden 2 (Aynı Sekme İçi `sessionState` Senkronizasyon Eksikliği):**
+     - `ensureSiweSession` doğrudan sayfa bileşenlerinden (`AccountSettingsPage`, `OrganizerDashboardPage`, `StudentProfile` vb.) çağrıldığında `broadcastAuthEvent("LOGIN", ...)` yalnızca `window.localStorage.setItem(...)` çalıştırıyordu.
+     - Web Storage standardı gereği `"storage"` olayı yalnızca **diğer sekmelerde** tetiklenir, aynı sekmede tetiklenmez. Bu yüzden `AppContext.jsx` içindeki `sessionState.authenticated` aynı sekmede `false` kalabiliyordu.
+
+### C. Uygulanan Düzeltmeler
+1. **`isValidSiweSigner` Doğrulaması (`src/utils/apiClient.js` & `src/context/AppContext.jsx`):**
+   - Bir nesnenin geçerli bir Ethers `Signer` olup olmadığı `Boolean(candidate && typeof candidate.signMessage === "function")` ile kontrol edildi. React `SyntheticBaseEvent` veya DOM `Event` nesneleri kesin olarak reddedilip `BrowserProvider(window.ethereum).getSigner()` üzerinden gerçek cüzdan imzacısı alındı.
+2. **`OrganizerGuard.jsx` ve `Navbar.jsx` SIWE Tetikleyici Sertleştirmesi:**
+   - `OrganizerGuard.jsx` içinde `onClick={onTriggerSiwe}` sarmalayıcısı ile `await handleSiweLogin()` parametresiz çağrıldı; işlem süresince `"İmzalanıyor..."` durumu ve olası hata mesajı (`siweError`) kullanıcıya görünür kılındı.
+   - `Navbar.jsx` içindeki hızlı SIWE giriş butonuna da açık hata geri bildirimi (`siweError`) eklendi.
+3. **Aynı Sekme + Sekmeler Arası Oturum Senkronizasyonu (`broadcastAuthEvent` & `AppContext.jsx`):**
+   - `broadcastAuthEvent` fonksiyonu `localStorage.setItem` yanında aynı sekmede `window.dispatchEvent(new CustomEvent(AUTH_STORAGE_EVENT_KEY, { detail: eventData }))` yayınlayacak şekilde güncellendi; `AppContext.jsx` her iki olayı da dinleyerek `sessionState`'i anında günceller hale getirildi.
+
+---
+
 ## 4. Değiştirilen Dosyalar
 
 1. `src/data/events.js`
    - `callWithRetry` eklendi.
    - `getReadOnlyProvider` (`staticNetwork: true`) ve `getReadOnlyContract` önbelleklendi.
    - `parseBlockchainError` hata öncelikleri düzeltildi.
-2. `src/context/AppContext.jsx`
+2. `src/utils/apiClient.js`
+   - `isValidSiweSigner` eklendi ve `ensureSiweSession` içinde React `SyntheticBaseEvent` / geçersiz signer koruması uygulandı.
+   - `broadcastAuthEvent` içine aynı sekme `CustomEvent` yayını eklendi.
+3. `src/context/AppContext.jsx`
    - `account` ve `sessionState` yaşam döngüleri ayrıştırıldı.
+   - `handleSiweLogin` içine `isValidSiweSigner` kontrolü ve aynı sekme `AUTH_STORAGE_EVENT_KEY` dinleyicisi eklendi.
    - `loadEvents` sıralı ve `callWithRetry` korumalı hale getirildi.
    - `handleLogout` ve `handleDisconnectWallet` bildirim durumlarını sıfırlar kılındı.
-   - `AppProvider`'a `initialChainId` desteği eklendi.
-3. `src/components/guards/OrganizerGuard.jsx`
+4. `src/components/guards/OrganizerGuard.jsx`
    - 5 durum ayrımı uygulandı (loading, no wallet, wrong network, no SIWE, 403 forbidden).
-   - `eventId` parametresi hem URL'den hem prop'tan okunabilir yapıldı.
-4. `src/components/guards/ProtectedRoute.jsx`
+   - SIWE giriş butonu `onTriggerSiwe` ile parametresiz çağrılacak ve yükleme/hata durumunu gösterecek şekilde düzeltildi.
+5. `src/components/Navbar.jsx`
+   - Hızlı SIWE giriş akışına hata geri bildirimi (`siweError`) eklendi.
+6. `src/components/guards/ProtectedRoute.jsx`
    - `sessionState.loading` koruması sağlandı.
-5. `src/pages/StudentProfile.jsx`
+7. `src/pages/StudentProfile.jsx`
    - `sessionState.loading` durumunda erken "Cüzdan Bağla" görünümü engellendi.
-6. `src/pages/OrganizerDashboardPage.jsx`
+8. `src/pages/OrganizerDashboardPage.jsx`
    - `sessionState.loading` koruması eklendi.
-7. `src/pages/OrganizerEventAnalyticsPage.jsx`
+9. `src/pages/OrganizerEventAnalyticsPage.jsx`
    - `sessionState.loading` koruması eklendi.
-8. `src/pages/EventPage.jsx`
-   - Tekil etkinlik ve kayıt durumu sorguları `callWithRetry` ile korundu.
-9. `src/utils/studentProfile.js`
-   - `callWithRetry` entegrasyonu, sıralı/kontrollü zincir sorguları ve hata korumalı log taraması uygulandı.
-10. `server/.env.example`
+10. `src/pages/EventPage.jsx`
+    - Tekil etkinlik ve kayıt durumu sorguları `callWithRetry` ile korundu.
+11. `src/utils/studentProfile.js`
+    - `callWithRetry` entegrasyonu, sıralı/kontrollü zincir sorguları ve hata korumalı log taraması uygulandı.
+12. `server/.env.example`
     - Standart RPC ve kontrat yapılandırması belgelendi.
-11. `test/Phase15BlockchainAndWalletFix.js`
-    - Rate limit (-32011) çevirisi, `callWithRetry`, ve `OrganizerGuard` 5 durum ayrımını doğrulayan yeni regresyon testleri eklendi.
+13. `test/Phase15BlockchainAndWalletFix.js`
+    - Rate limit (-32011) çevirisi, `callWithRetry`, `OrganizerGuard` 5 durum ayrımı, `isValidSiweSigner`, `SyntheticBaseEvent` signer koruması ile uçtan uca SIWE oturum açma ve aynı sekme `broadcastAuthEvent` senkronizasyonunu doğrulayan 30 regresyon testi eklendi.
 
 ---
 
@@ -141,15 +185,15 @@ Navbar bağlı bir cüzdan gösterirken `/profile` ve `/organizer` sayfalarında
 ```bash
 # 1. Test Paketi (Mocha / Hardhat)
 npm test
--> 183 passing (10s) (Tüm testler ve Faz 15 regresyon testleri yeşil)
+-> 186 passing (7s) (Tüm testler ve 30 adet Faz 15 regresyon testi yeşil)
 
 # 2. Linter Denetimi
 npm run lint
--> 0 error, 84 warning (0 hata)
+-> 0 error, 93 warning (0 hata)
 
 # 3. Üretim Derlemesi (Vite Build)
 npm run build
--> built in 696ms (dist/assets hatasız üretildi)
+-> built in 311ms (dist/assets hatasız üretildi)
 
 # 4. Prisma Şema Doğrulaması
 npm run db:validate
@@ -157,7 +201,7 @@ npm run db:validate
 
 # 5. PostgreSQL Entegrasyon Testi
 npm run test:postgres
--> [BİLGİ / ATLANDI] Gerçek PostgreSQL sunucusu yerel ortamda çalışmadığı için yönerge gereği doğru şekilde ATLANDI olarak raporlandı.
+-> 1..8 [BAŞARILI] Tüm Gerçek PostgreSQL Entegrasyon Testleri Başarıyla Tamamlandı
 ```
 
 ---

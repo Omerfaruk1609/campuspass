@@ -19,6 +19,7 @@ export default function Navbar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [siweLoading, setSiweLoading] = useState(false);
+  const [siweError, setSiweError] = useState(null);
   const menuRef = useRef(null);
 
   // Dışarı tıklama durumunda menüyü kapat
@@ -52,14 +53,19 @@ export default function Navbar({
   async function handleQuickSiweLogin() {
     if (!account) return;
     setSiweLoading(true);
+    setSiweError(null);
     try {
       if (typeof onSiweLogin === "function") {
         await onSiweLogin();
       } else {
         await ensureSiweSession(account);
       }
-    } catch {
-      // SIWE reddedildi veya hata
+    } catch (err) {
+      setSiweError(
+        err?.code === 4001 || err?.code === "ACTION_REJECTED"
+          ? "İmza isteği reddedildi."
+          : err?.message || "SIWE oturumu açılamadı."
+      );
     } finally {
       setSiweLoading(false);
     }
@@ -527,25 +533,39 @@ export default function Navbar({
                       </strong>
                     </div>
                     {!sessionState?.authenticated && (
-                      <button
-                        type="button"
-                        onClick={handleQuickSiweLogin}
-                        disabled={siweLoading}
-                        style={{
-                          marginTop: "0.4rem",
-                          width: "100%",
-                          padding: "0.35rem 0.5rem",
-                          borderRadius: "0.375rem",
-                          backgroundColor: "var(--stitch-primary)",
-                          color: "#ffffff",
-                          border: "none",
-                          cursor: "pointer",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {siweLoading ? "İmzalanıyor..." : "Oturum Aç (SIWE İmzala)"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleQuickSiweLogin}
+                          disabled={siweLoading}
+                          style={{
+                            marginTop: "0.4rem",
+                            width: "100%",
+                            padding: "0.35rem 0.5rem",
+                            borderRadius: "0.375rem",
+                            backgroundColor: "var(--stitch-primary)",
+                            color: "#ffffff",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {siweLoading ? "İmzalanıyor..." : "Oturum Aç (SIWE İmzala)"}
+                        </button>
+                        {siweError && (
+                          <div
+                            style={{
+                              marginTop: "0.35rem",
+                              color: "#fca5a5",
+                              fontSize: "0.7rem",
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {siweError}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 

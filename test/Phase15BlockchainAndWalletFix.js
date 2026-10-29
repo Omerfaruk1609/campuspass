@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { ethers } from "ethers";
 import React from "react";
 globalThis.React = React;
 import { renderToString } from "react-dom/server";
@@ -14,9 +15,13 @@ import {
   AUTH_STORAGE_EVENT_KEY,
   broadcastAuthEvent,
   clearActiveAuthState,
+  ensureSiweSession,
   getActiveAuthState,
+  isValidSiweSigner,
   connectNotificationStream,
 } from "../src/utils/apiClient.js";
+import { buildCampusPassApp } from "../server/src/app.js";
+import { createTransactionalPrismaStore } from "../server/src/services/prismaClient.js";
 import { AppProvider, useAppContext } from "../src/context/AppContext.jsx";
 import RootLayout from "../src/layouts/RootLayout.jsx";
 import Navbar from "../src/components/Navbar.jsx";
@@ -511,6 +516,155 @@ describe("Faz 15 — Blokzincir Olay Okuma ve Cüzdan/SIWE Yaşam Döngüsü Reg
 
       expect(html).to.include("Yetkisiz Erişim (403 Forbidden)");
       expect(html).to.not.include("Gizli Analitik");
+    });
+  });
+
+  describe("4. SIWE Oturum Açma Regresyon Testleri (SyntheticEvent Signer Koruması & Aynı Sekme Senkronizasyonu)", function () {
+    beforeEach(function () {
+      clearActiveAuthState();
+    });
+
+    it("4.1 isValidSiweSigner: React SyntheticBaseEvent veya DOM Event nesnesini signer olarak reddetmeli", function () {
+      const fakeClickEvent = {
+        _reactName: "onClick",
+        type: "click",
+        target: {},
+        preventDefault() {},
+      };
+      expect(isValidSiweSigner(fakeClickEvent)).to.be.false;
+      expect(isValidSiweSigner(null)).to.be.false;
+      expect(isValidSiweSigner({})).to.be.false;
+
+      const wallet = ethers.Wallet.createRandom();
+      expect(isValidSiweSigner(wallet)).to.be.true;
+    });
+
+    it("4.2 ensureSiweSession: signer parametresine yanlışlıkla React click event geçildiğinde hata fırlatmak yerine gerçek cüzdan imzacısını kullanmalı ve uçtan uca SIWE oturumu açmalı", async function () {
+      const wallet = ethers.Wallet.createRandom();
+      const prisma = createTransactionalPrismaStore();
+      const { app } = buildCampusPassApp({ prisma });
+      let sessionCookie = null;
+
+      // Custom fetch wrapping app.inject to test full HTTP SIWE lifecycle
+      const customFetch = async (urlStr, options = {}) => {
+        const parsedUrl = new URL(urlStr);
+        const pathAndQuery = parsedUrl.pathname + parsedUrl.search;
+        const headers = {
+          origin: "http://localhost:5173",
+          ...(options.headers || {}),
+        };
+        if (sessionCookie) {
+          headers.cookie = sessionCookie;
+        }
+        const injectRes = await app.inject({
+          method: options.method || "GET",
+          url: pathAndQuery,
+          headers,
+          body: options.body ? JSON.parse(options.body) : undefined,
+        });
+        const setCookie = injectRes.headers["set-cookie"];
+        if (setCookie) {
+          const raw = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+          sessionCookie = raw.split(";")[0];
+        }
+        return {
+          ok: injectRes.status >= 200 && injectRes.status < 300,
+          status: injectRes.status,
+          json: async () => injectRes.body,
+        };
+      };
+
+      // Simulate browser window.ethereum returning the wallet's signature when signer is a SyntheticBaseEvent
+      const prevWindow = globalThis.window;
+      const syntheticClickEvent = {
+        _reactName: "onClick",
+        type: "click",
+        currentTarget: {},
+      };
+
+      // Override BrowserProvider.prototype.getSigner temporarily to return `wallet`
+      const origGetSigner = ethers.BrowserProvider.prototype.getSigner;
+      ethers.BrowserProvider.prototype.getSigner = async function () {
+        return wallet;
+      };
+      globalThis.window = {
+        ethereum: {
+          request: async () => [wallet.address],
+        },
+      };
+
+      try {
+        const auth = await ensureSiweSession({
+          signer: syntheticClickEvent, // React click event passed by mistake
+          walletAddress: wallet.address,
+          chainId: 10143,
+          customFetch,
+        });
+
+        expect(auth.authenticated).to.be.true;
+        expect(auth.walletAddress).to.equal(ethers.getAddress(wallet.address));
+        expect(auth.csrfToken).to.be.a("string").and.not.be.empty;
+        expect(sessionCookie).to.include("campuspass_session=");
+
+        // Verify server session restoration with cookie
+        const verifySessionRes = await app.inject({
+          method: "GET",
+          url: "/api/auth/session",
+          headers: {
+            origin: "http://localhost:5173",
+            cookie: sessionCookie,
+          },
+        });
+        expect(verifySessionRes.status).to.equal(200);
+        expect(verifySessionRes.body.data.authenticated).to.be.true;
+        expect(verifySessionRes.body.data.walletAddress).to.equal(
+          ethers.getAddress(wallet.address)
+        );
+      } finally {
+        ethers.BrowserProvider.prototype.getSigner = origGetSigner;
+        globalThis.window = prevWindow;
+      }
+    });
+
+    it("4.3 broadcastAuthEvent: Hem localStorage hem de aynı sekme CustomEvent tetiklemeli", function () {
+      const prevWindow = globalThis.window;
+      let storedValue = null;
+      let dispatchedCustomEvent = null;
+
+      globalThis.window = {
+        localStorage: {
+          setItem(key, val) {
+            if (key === AUTH_STORAGE_EVENT_KEY) {
+              storedValue = JSON.parse(val);
+            }
+          },
+        },
+        dispatchEvent(evt) {
+          dispatchedCustomEvent = evt;
+        },
+      };
+
+      try {
+        const testAddr = "0x70761Cd6ff53fa54408f1497f0E5FF9E56794dC5";
+        broadcastAuthEvent("LOGIN", {
+          walletAddress: testAddr,
+          csrfToken: "csrf-12345",
+        });
+
+        expect(storedValue).to.not.be.null;
+        expect(storedValue.type).to.equal("LOGIN");
+        expect(storedValue.walletAddress).to.equal(testAddr);
+        expect(storedValue.csrfToken).to.equal("csrf-12345");
+
+        if (typeof CustomEvent === "function") {
+          expect(dispatchedCustomEvent).to.not.be.null;
+          expect(dispatchedCustomEvent.type).to.equal(AUTH_STORAGE_EVENT_KEY);
+          expect(dispatchedCustomEvent.detail.walletAddress).to.equal(testAddr);
+          expect(dispatchedCustomEvent.detail.csrfToken).to.equal("csrf-12345");
+        }
+      } finally {
+        globalThis.window = prevWindow;
+      }
     });
   });
 });

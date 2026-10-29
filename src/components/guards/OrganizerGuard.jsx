@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
-import { MONAD_CHAIN_ID, shortenAddress } from "../../data/events";
+import { MONAD_CHAIN_ID, parseBlockchainError, shortenAddress } from "../../data/events";
 
 export default function OrganizerGuard({ children, requireEventOrganizer = false, eventId: propEventId }) {
   const {
@@ -16,6 +17,24 @@ export default function OrganizerGuard({ children, requireEventOrganizer = false
   } = useAppContext();
   const params = useParams();
   const eventId = propEventId ?? params?.eventId;
+  const [siweLoading, setSiweLoading] = useState(false);
+  const [siweError, setSiweError] = useState(null);
+
+  async function onTriggerSiwe() {
+    setSiweLoading(true);
+    setSiweError(null);
+    try {
+      await handleSiweLogin();
+    } catch (err) {
+      setSiweError(
+        err?.code === 4001 || err?.code === "ACTION_REJECTED"
+          ? "SIWE imza isteği cüzdanda reddedildi."
+          : err?.message || parseBlockchainError(err)
+      );
+    } finally {
+      setSiweLoading(false);
+    }
+  }
 
   // 1. Oturum durumu kontrol ediliyor
   if (sessionState.loading) {
@@ -206,16 +225,33 @@ export default function OrganizerGuard({ children, requireEventOrganizer = false
             >
               Organizatör paneli verilerine ve katılımcı listelerine erişmek için bağlı cüzdanınızla ({shortenAddress(account)}) oturum açmanız gerekmektedir.
             </p>
+            {siweError && (
+              <div
+                style={{
+                  margin: "0 auto 1.25rem auto",
+                  maxWidth: "460px",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "0.75rem",
+                  backgroundColor: "rgba(239, 68, 68, 0.15)",
+                  border: "1px solid rgba(239, 68, 68, 0.35)",
+                  color: "#fca5a5",
+                  fontSize: "0.875rem",
+                }}
+              >
+                {siweError}
+              </div>
+            )}
             <button
               type="button"
               className="stitch-btn-primary"
-              onClick={handleSiweLogin}
+              onClick={onTriggerSiwe}
+              disabled={siweLoading}
               style={{ padding: "0.75rem 2rem", fontSize: "1rem" }}
             >
               <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
                 login
               </span>
-              <span>SIWE ile Giriş Yap</span>
+              <span>{siweLoading ? "İmzalanıyor..." : "SIWE ile Giriş Yap"}</span>
             </button>
           </section>
         </div>
