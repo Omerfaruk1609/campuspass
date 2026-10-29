@@ -1,5 +1,6 @@
 import { ApiError } from "../utils/errors.js";
 import {
+  announcementCreateSchema,
   cancelEventBodySchema,
   eventIdParamSchema,
   eventMetadataInputSchema,
@@ -107,6 +108,34 @@ export function createEventController({ eventService }) {
       res.status(200).json({
         success: true,
         data: updated,
+      });
+    },
+
+    async createAnnouncement(req, res) {
+      const { eventId } = parseWithZod(eventIdParamSchema, req.params);
+      const validatedInput = parseWithZod(announcementCreateSchema, req.body);
+
+      const result = await eventService.createAnnouncement(
+        eventId,
+        req.session.walletAddress,
+        validatedInput
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Duyuru başarıyla yayınlandı.",
+        data: result,
+      });
+    },
+
+    async getAnnouncements(req, res) {
+      const { eventId } = parseWithZod(eventIdParamSchema, req.params);
+      const result = await eventService.getAnnouncements(eventId, req.query);
+
+      res.status(200).json({
+        success: true,
+        data: result.items,
+        pagination: result.pagination,
       });
     },
   };

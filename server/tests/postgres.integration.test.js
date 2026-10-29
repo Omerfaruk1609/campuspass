@@ -409,7 +409,100 @@ async function runPostgresIntegrationSuite() {
       "7. [BAŞARILI] Faz 14 StudentProfile CRUD, P2002 Unique Constraint ve Gizlilik (isPublic) güncellemeleri doğrulandı."
     );
 
+    // 8. Faz 15 — Notification, Announcement & NotificationPreference CRUD ve Model Doğrulaması
+    const TEST_NOTIF_WALLET = "0x1515151515151515151515151515151515151515";
+    await prisma.notification.deleteMany({ where: { recipientWallet: TEST_NOTIF_WALLET } });
+    await prisma.notificationPreference.deleteMany({ where: { walletAddress: TEST_NOTIF_WALLET } });
+    await prisma.announcement.deleteMany({ where: { authorWallet: TEST_NOTIF_WALLET } });
+
+    // 8.1 Notification oluşturma ve okundu güncellemesi
+    const createdNotif = await prisma.notification.create({
+      data: {
+        recipientWallet: TEST_NOTIF_WALLET,
+        type: "EVENT_ANNOUNCEMENT",
+        title: "Test Duyurusu",
+        message: "Gerçek PostgreSQL Faz 15 bildirim entegrasyonu.",
+        destinationUrl: "/events/1",
+        read: false,
+        metadata: JSON.stringify({ source: "postgres_test" }),
+      },
+    });
+
+    if (!createdNotif.id || createdNotif.read !== false) {
+      throw new Error("Notification create doğrulaması başarısız.");
+    }
+
+    const updatedNotif = await prisma.notification.update({
+      where: { id: createdNotif.id },
+      data: {
+        read: true,
+        readAt: new Date(),
+      },
+    });
+
+    if (!updatedNotif.read || !updatedNotif.readAt) {
+      throw new Error("Notification read update doğrulaması başarısız.");
+    }
+
+    // 8.2 NotificationPreference P2002 Unique Constraint ve güncelleme
+    const createdPref = await prisma.notificationPreference.create({
+      data: {
+        walletAddress: TEST_NOTIF_WALLET,
+        eventUpdates: true,
+        community: false,
+        announcements: true,
+        certificates: true,
+      },
+    });
+
+    if (!createdPref.id || createdPref.community !== false) {
+      throw new Error("NotificationPreference create doğrulaması başarısız.");
+    }
+
+    let prefUniqueCaught = false;
+    try {
+      await prisma.notificationPreference.create({
+        data: {
+          walletAddress: TEST_NOTIF_WALLET,
+          eventUpdates: false,
+        },
+      });
+    } catch (err) {
+      if (err.code === "P2002") {
+        prefUniqueCaught = true;
+      } else {
+        throw err;
+      }
+    }
+
+    if (!prefUniqueCaught) {
+      throw new Error("NotificationPreference walletAddress unique constraint (P2002) ihlali yakalanmadı!");
+    }
+
+    // 8.3 Announcement CRUD
+    const createdAnnouncement = await prisma.announcement.create({
+      data: {
+        targetType: "COMMUNITY",
+        communityId: createdComm.id,
+        authorWallet: TEST_NOTIF_WALLET,
+        title: "Topluluk PostgreSQL Duyurusu",
+        content: "Entegrasyon testi duyuru metni.",
+        recipientCount: 5,
+      },
+    });
+
+    if (!createdAnnouncement.id || createdAnnouncement.recipientCount !== 5) {
+      throw new Error("Announcement create doğrulaması başarısız.");
+    }
+
+    console.log(
+      "8. [BAŞARILI] Faz 15 Notification, Announcement ve NotificationPreference (P2002) CRUD testleri doğrulandı."
+    );
+
     // İzole test kayıtlarını temizle
+    await prisma.notification.deleteMany({ where: { recipientWallet: TEST_NOTIF_WALLET } });
+    await prisma.notificationPreference.deleteMany({ where: { walletAddress: TEST_NOTIF_WALLET } });
+    await prisma.announcement.deleteMany({ where: { id: createdAnnouncement.id } });
     await prisma.studentProfile.deleteMany({ where: { walletAddress: TEST_STUDENT_PROFILE_WALLET } });
     await prisma.attendanceCertificate.delete({ where: { id: createdCert.id } });
     await prisma.eventMetadata.delete({ where: { id: createdMeta.id } });

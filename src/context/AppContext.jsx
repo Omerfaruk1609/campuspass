@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
   CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
+  callWithRetry,
   getReadOnlyContract,
   getSignerContract,
   parseBlockchainError,
@@ -24,9 +25,14 @@ import {
   cancelEventOnBackend,
   checkServerSession,
   clearActiveAuthState,
+  connectNotificationStream,
   ensureOrganizerSiweSession,
   fetchEventsMetadataFromBackend,
+  fetchUnreadNotificationCountFromBackend,
+  isValidSiweSigner,
   logoutOrganizerSiweSession,
+  markAllNotificationsAsReadOnBackend,
+  markNotificationAsReadOnBackend,
   reactivateEventOnBackend,
   readPendingSyncQueue,
   removePendingMetadataSync,
@@ -38,12 +44,17 @@ const AppContext = createContext(null);
 export function AppProvider({
   children,
   initialAccount = null,
+  initialChainId = null,
   initialSessionState = null,
   initialEvents = [],
-  initialLoadingEvents = false,
+  initialLoadingEvents = true,
 }) {
   const [account, setAccount] = useState(initialAccount);
-  const [chainId, setChainId] = useState(null);
+  const accountRef = useRef(initialAccount);
+  useEffect(() => {
+    accountRef.current = account;
+  }, [account]);
+  const [chainId, setChainId] = useState(initialChainId);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const [events, setEvents] = useState(initialEvents);
@@ -74,6 +85,8 @@ export function AppProvider({
   });
 
   const [banner, setBanner] = useState(null);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [liveNotification, setLiveNotification] = useState(null);
 
   const computePendingItemsForAccount = useCallback(
     (currentAccount, serverMetadataMap = {}) => {
@@ -116,6 +129,8 @@ export function AppProvider({
 
   const loadEvents = useCallback(
     async (currentAccount) => {
+      const targetAccount =
+        currentAccount !== undefined ? currentAccount : accountRef.current;
       setLoadingEvents(true);
       try {
         let serverMetadataMap = {};
@@ -147,10 +162,10 @@ export function AppProvider({
           });
         }
 
-        computePendingItemsForAccount(currentAccount, serverMetadataMap);
+        computePendingItemsForAccount(targetAccount, serverMetadataMap);
 
         const contract = getReadOnlyContract();
-        const nextIdBigInt = await contract.nextEventId();
+        const nextIdBigInt = await callWithRetry(() => contract.nextEventId());
         const total = Number(nextIdBigInt) - 1;
 
         if (total <= 0) {
@@ -162,7 +177,8 @@ export function AppProvider({
         const attendanceCountMap = { ...apiAttendanceCountMap };
         try {
           const filter = contract.filters.AttendanceMarked();
-          const logs = await contract.queryFilter(filter, -50000);
+          // Monad Testnet RPC eth_getLogs isteğini 100 blokla sınırlar
+          const logs = await contract.queryFilter(filter, -90);
           const uniquePerEvent = {};
           for (const log of logs) {
             const evId = Number(log.args?.eventId);
@@ -179,48 +195,55 @@ export function AppProvider({
             );
           }
         } catch {
-          // RPC log aralığı kısıtlıysa güvenli şekilde devam et
+          // RPC log aralığı kısıtlıysa güvenli şekilde devam et (asla etkinlik yüklemesini engellemez)
         }
 
         const ids = Array.from({ length: total }, (_, idx) => idx + 1);
-        const loaded = await Promise.all(
-          ids.map(async (id) => {
-            const ev = await contract.events(id);
-            let isRegistered = false;
-            let isAttended = false;
+        const loaded = [];
 
-            if (currentAccount) {
+        // Monad Testnet RPC'nin 15 req/sec sınırını aşmamak için etkinlikleri sıralı/kontrollü yükle
+        for (const id of ids) {
+          const ev = await callWithRetry(() => contract.events(id));
+          let isRegistered = false;
+          let isAttended = false;
+
+          if (targetAccount && ethers.isAddress(targetAccount)) {
+            try {
               const [reg, att] = await Promise.all([
-                contract.registered(id, currentAccount),
-                contract.attended(id, currentAccount),
+                callWithRetry(() => contract.registered(id, targetAccount)),
+                callWithRetry(() => contract.attended(id, targetAccount)),
               ]);
               isRegistered = Boolean(reg);
               isAttended = Boolean(att);
+            } catch {
+              // Bireysel kayıt kontrolü başarısız olursa etkinliğin kendisini yüklemeyi engelleme
             }
+          }
 
-            const verifiedCount = Math.max(
-              attendanceCountMap[id] || 0,
-              isAttended ? 1 : 0
-            );
+          const verifiedCount = Math.max(
+            attendanceCountMap[id] || 0,
+            isAttended ? 1 : 0
+          );
 
-            const baseOnChainEvent = {
-              id: Number(ev.id),
-              organizer: ev.organizer,
-              title: ev.title,
-              capacity: Number(ev.capacity),
-              registeredCount: Number(ev.registeredCount),
-              active: Boolean(ev.active),
-              isRegistered,
-              isAttended,
-              verifiedAttendanceCount: verifiedCount,
-            };
+          const baseOnChainEvent = {
+            id: Number(ev.id),
+            organizer: ev.organizer,
+            title: ev.title,
+            capacity: Number(ev.capacity),
+            registeredCount: Number(ev.registeredCount),
+            active: Boolean(ev.active),
+            isRegistered,
+            isAttended,
+            verifiedAttendanceCount: verifiedCount,
+          };
 
-            return mergeOnChainEventWithMetadata(baseOnChainEvent, {
+          loaded.push(
+            mergeOnChainEventWithMetadata(baseOnChainEvent, {
               chainId: MONAD_CHAIN_ID,
               contractAddress: CONTRACT_ADDRESS,
-            });
-          })
-        );
+            })
+          );
+        }
 
         // En yeni etkinlikler üstte
         setEvents(loaded.reverse());
@@ -248,12 +271,13 @@ export function AppProvider({
         try {
           const provider = new ethers.BrowserProvider(window.ethereum);
           const accounts = await provider.send("eth_accounts", []);
-          const network = await provider.getNetwork();
-          if (isMounted) setChainId(Number(network.chainId));
-          if (accounts.length > 0) {
+          if (accounts && accounts.length > 0 && accounts[0]) {
             currentAccount = ethers.getAddress(accounts[0]);
+            accountRef.current = currentAccount;
             if (isMounted) setAccount(currentAccount);
           }
+          const network = await provider.getNetwork();
+          if (isMounted) setChainId(Number(network.chainId));
         } catch {
           // Cüzdan okuma hatası olursa salt-okunur modda devam et
         }
@@ -263,16 +287,29 @@ export function AppProvider({
       try {
         const serverAuth = await checkServerSession();
         if (isMounted) {
-          if (serverAuth && serverAuth.authenticated) {
-            setSessionState({
-              authenticated: true,
-              walletAddress: serverAuth.walletAddress,
-              csrfToken: serverAuth.csrfToken,
-              loading: false,
-            });
-            if (!currentAccount && serverAuth.walletAddress) {
-              currentAccount = serverAuth.walletAddress;
-              setAccount(serverAuth.walletAddress);
+          if (serverAuth && serverAuth.authenticated && serverAuth.walletAddress) {
+            const serverWallet = ethers.getAddress(serverAuth.walletAddress);
+            // Eğer bağlı bir cüzdan varsa ve sunucu oturumunun cüzdanından farklıysa, eski oturumu geçersiz kıl
+            if (
+              currentAccount &&
+              currentAccount.toLowerCase() !== serverWallet.toLowerCase()
+            ) {
+              clearActiveAuthState();
+              logoutOrganizerSiweSession().catch(() => {});
+              setSessionState({
+                authenticated: false,
+                walletAddress: null,
+                csrfToken: null,
+                loading: false,
+              });
+            } else {
+              setSessionState({
+                authenticated: true,
+                walletAddress: serverWallet,
+                csrfToken: serverAuth.csrfToken,
+                loading: false,
+              });
+              // Cüzdan bağlı değilse (currentAccount null), oturumu koru fakat cüzdanı bağlıymış gibi gösterme (ayrımı koru)
             }
           } else {
             setSessionState({
@@ -292,6 +329,10 @@ export function AppProvider({
             loading: false,
           });
         }
+      } finally {
+        if (isMounted) {
+          setSessionState((prev) => ({ ...prev, loading: false }));
+        }
       }
 
       await loadEvents(currentAccount);
@@ -309,11 +350,21 @@ export function AppProvider({
 
     const handleAccountsChanged = (accounts) => {
       const nextAcc =
-        accounts && accounts.length > 0 ? ethers.getAddress(accounts[0]) : null;
-      // Cüzdan değiştiğinde önceki cüzdanın SIWE oturumunu ve yetkili durumunu temizle
+        accounts && accounts.length > 0 && accounts[0]
+          ? ethers.getAddress(accounts[0])
+          : null;
+
+      // Hesap değişmemişse gereksiz sıfırlama veya işlem yapma
+      if (nextAcc?.toLowerCase() === accountRef.current?.toLowerCase()) {
+        return;
+      }
+
+      accountRef.current = nextAcc;
+      setAccount(nextAcc);
+
+      // Cüzdan değiştiğinde veya bağlantı koptuğunda önceki cüzdanın SIWE oturumunu ve yetkili durumunu temizle
       clearActiveAuthState();
       logoutOrganizerSiweSession().catch(() => {});
-      setAccount(nextAcc);
       setSessionState({
         authenticated: false,
         walletAddress: null,
@@ -326,48 +377,178 @@ export function AppProvider({
     const handleChainChanged = (hexChainId) => {
       const parsed = Number.parseInt(hexChainId, 16);
       setChainId(parsed);
-      loadEvents(account);
+      loadEvents(accountRef.current);
     };
 
     window.ethereum.on("accountsChanged", handleAccountsChanged);
     window.ethereum.on("chainChanged", handleChainChanged);
 
     return () => {
-      if (window.ethereum.removeListener) {
-        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
-        window.ethereum.removeListener("chainChanged", handleChainChanged);
+      if (window.ethereum) {
+        if (typeof window.ethereum.removeListener === "function") {
+          window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          window.ethereum.removeListener("chainChanged", handleChainChanged);
+        } else if (typeof window.ethereum.off === "function") {
+          window.ethereum.off("accountsChanged", handleAccountsChanged);
+          window.ethereum.off("chainChanged", handleChainChanged);
+        }
       }
     };
-  }, [account, loadEvents]);
+  }, [loadEvents]);
 
-  // Sekmeler arası oturum kapatma senkronizasyonunu dinle
+  // Canlı SSE Bildirim Akışı ve Okunmamış Bildirim Sayacı
+  useEffect(() => {
+    if (!sessionState?.authenticated || !sessionState?.walletAddress) {
+      setUnreadNotificationCount(0);
+      setLiveNotification(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    fetchUnreadNotificationCountFromBackend()
+      .then((data) => {
+        if (isMounted && typeof data?.unreadCount === "number") {
+          setUnreadNotificationCount(data.unreadCount);
+        }
+      })
+      .catch(() => {});
+
+    const disconnect = connectNotificationStream({
+      onNotification: (notif) => {
+        if (!isMounted) return;
+        setUnreadNotificationCount((prev) => prev + 1);
+        setLiveNotification(notif);
+      },
+      onUnreadCount: (data) => {
+        if (!isMounted) return;
+        if (typeof data?.unreadCount === "number") {
+          setUnreadNotificationCount(data.unreadCount);
+        }
+      },
+    });
+
+    return () => {
+      isMounted = false;
+      disconnect();
+    };
+  }, [sessionState?.authenticated, sessionState?.walletAddress]);
+
+  const handleMarkNotificationRead = useCallback(async (notificationId) => {
+    try {
+      await markNotificationAsReadOnBackend(notificationId);
+      setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    try {
+      await markAllNotificationsAsReadOnBackend();
+      setUnreadNotificationCount(0);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Sekmeler arası ve aynı sekme içi SIWE oturum senkronizasyonunu dinle
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+
+    const applyAuthPayload = (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      if (payload.type === "LOGOUT") {
+        clearActiveAuthState();
+        setSessionState({
+          authenticated: false,
+          walletAddress: null,
+          csrfToken: null,
+          loading: false,
+        });
+      } else if (payload.type === "LOGIN" && payload.walletAddress) {
+        if (payload.csrfToken) {
+          setSessionState({
+            authenticated: true,
+            walletAddress: ethers.getAddress(payload.walletAddress),
+            csrfToken: payload.csrfToken,
+            loading: false,
+          });
+        } else {
+          checkServerSession()
+            .then((auth) => {
+              if (auth && auth.authenticated) {
+                setSessionState({
+                  authenticated: true,
+                  walletAddress: auth.walletAddress,
+                  csrfToken: auth.csrfToken,
+                  loading: false,
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    };
 
     const handleStorageChange = (e) => {
       if (e.key === AUTH_STORAGE_EVENT_KEY) {
         try {
           const payload = JSON.parse(e.newValue || "{}");
-          if (payload.type === "LOGOUT") {
-            clearActiveAuthState();
-            setSessionState({
-              authenticated: false,
-              walletAddress: null,
-              csrfToken: null,
-              loading: false,
-            });
-          }
+          applyAuthPayload(payload);
         } catch {
           // JSON ayrıştırma hatası göz ardı edilir
         }
       }
     };
 
+    const handleSameTabAuthEvent = (e) => {
+      applyAuthPayload(e?.detail);
+    };
+
     window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(AUTH_STORAGE_EVENT_KEY, handleSameTabAuthEvent);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(AUTH_STORAGE_EVENT_KEY, handleSameTabAuthEvent);
     };
   }, []);
+
+  // SIWE oturumu başlat
+  const handleSiweLogin = useCallback(async (customSigner = null) => {
+    let signer = isValidSiweSigner(customSigner) ? customSigner : null;
+    if (!signer && typeof window !== "undefined" && window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+    }
+    let currentAcc = accountRef.current || account;
+    if (!currentAcc && signer && typeof signer.getAddress === "function") {
+      try {
+        currentAcc = ethers.getAddress(await signer.getAddress());
+        accountRef.current = currentAcc;
+        setAccount(currentAcc);
+      } catch {
+        // Cüzdan adresi okunamadıysa alt satırda hata fırlatılır
+      }
+    }
+    if (!currentAcc) {
+      throw new Error("SIWE kimlik doğrulaması için önce cüzdanınızı bağlayın.");
+    }
+    const auth = await ensureOrganizerSiweSession({
+      signer,
+      walletAddress: currentAcc,
+      chainId: MONAD_CHAIN_ID,
+    });
+    setSessionState({
+      authenticated: true,
+      walletAddress: ethers.getAddress(auth.walletAddress),
+      csrfToken: auth.csrfToken,
+      loading: false,
+    });
+    return auth;
+  }, [account]);
 
   // Sunucu SIWE oturumunu güvenle sonlandır
   const handleLogout = useCallback(async () => {
@@ -383,6 +564,8 @@ export function AppProvider({
       csrfToken: null,
       loading: false,
     });
+    setUnreadNotificationCount(0);
+    setLiveNotification(null);
     setBanner({
       type: "info",
       message: "CampusPass SIWE oturumunuz başarıyla kapatıldı.",
@@ -400,6 +583,8 @@ export function AppProvider({
       csrfToken: null,
       loading: false,
     });
+    setUnreadNotificationCount(0);
+    setLiveNotification(null);
     setBanner({
       type: "info",
       message: "Cüzdan bağlantısı kesildi.",
@@ -428,7 +613,23 @@ export function AppProvider({
 
       if (accounts.length > 0) {
         const checksummed = ethers.getAddress(accounts[0]);
+        accountRef.current = checksummed;
         setAccount(checksummed);
+
+        // Eğer mevcut sunucu oturumu bağlanan cüzdanla eşleşmiyorsa eski oturumu temizle
+        if (
+          sessionState.walletAddress &&
+          sessionState.walletAddress.toLowerCase() !== checksummed.toLowerCase()
+        ) {
+          clearActiveAuthState();
+          logoutOrganizerSiweSession().catch(() => {});
+          setSessionState({
+            authenticated: false,
+            walletAddress: null,
+            csrfToken: null,
+            loading: false,
+          });
+        }
 
         if (connectedChainId !== MONAD_CHAIN_ID) {
           try {
@@ -939,11 +1140,18 @@ export function AppProvider({
     handleConnectWallet,
     handleDisconnectWallet,
     handleLogout,
+    handleSiweLogin,
     handleSwitchNetwork,
     handleCreateEvent,
     handleUpdateEventMetadata,
     handleRegisterEvent,
     handleMarkAttendance,
+    unreadNotificationCount,
+    setUnreadNotificationCount,
+    liveNotification,
+    setLiveNotification,
+    handleMarkNotificationRead,
+    handleMarkAllNotificationsRead,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -188,6 +188,9 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
     communityMember: [],
     attendanceCertificate: [],
     studentProfile: [],
+    notification: [],
+    announcement: [],
+    notificationPreference: [],
   };
 
   if (persistFilePath && fs.existsSync(persistFilePath)) {
@@ -300,6 +303,15 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
       );
       if (dup) {
         throw createUniqueConstraintError(["communityId", "walletAddress"]);
+      }
+    }
+
+    if (tableName === "notificationPreference") {
+      const dupWallet = rows.find(
+        (r) => String(r.walletAddress).toLowerCase() === String(candidate.walletAddress).toLowerCase()
+      );
+      if (dupWallet) {
+        throw createUniqueConstraintError(["walletAddress"]);
       }
     }
 
@@ -494,6 +506,9 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
     communityMember: buildDelegate("communityMember"),
     attendanceCertificate: buildDelegate("attendanceCertificate"),
     studentProfile: buildDelegate("studentProfile"),
+    notification: buildDelegate("notification"),
+    announcement: buildDelegate("announcement"),
+    notificationPreference: buildDelegate("notificationPreference"),
 
     /**
      * Atomik veritabanı transaction'ı:
@@ -514,6 +529,9 @@ export function createTransactionalPrismaStore({ persistFilePath = null } = {}) 
         communityMember: buildDelegate("communityMember", false),
         attendanceCertificate: buildDelegate("attendanceCertificate", false),
         studentProfile: buildDelegate("studentProfile", false),
+        notification: buildDelegate("notification", false),
+        announcement: buildDelegate("announcement", false),
+        notificationPreference: buildDelegate("notificationPreference", false),
       };
 
       try {

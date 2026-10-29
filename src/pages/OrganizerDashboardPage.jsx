@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import { ethers } from "ethers";
 import {
   MONAD_CHAIN_ID,
@@ -15,35 +16,35 @@ import {
 import { SimpleBarChart } from "../components/AnalyticsCharts";
 import { formatTurkeyDateOnly } from "../utils/eventMetadata";
 
-export default function OrganizerDashboardPage({
-  account,
-  onConnectWallet,
-  onSelectEvent,
-  onSelectEventAnalytics,
-  onCreateEventClick,
-  isConnecting,
-}) {
+export default function OrganizerDashboardPage(props) {
+  const context = useAppContext();
   const navigate = useNavigate();
 
+  const account = props.account ?? context?.account ?? null;
+  const onConnectWallet = props.onConnectWallet ?? context?.handleConnectWallet;
+  const isConnecting = props.isConnecting ?? context?.isConnecting ?? false;
+  const chainId = props.chainId ?? context?.chainId ?? null;
+  const onSwitchNetwork = props.onSwitchNetwork ?? context?.handleSwitchNetwork;
+
   const handleSelectAnalytics = (id) => {
-    if (onSelectEventAnalytics) {
-      onSelectEventAnalytics(id);
+    if (props.onSelectEventAnalytics) {
+      props.onSelectEventAnalytics(id);
     } else if (navigate) {
       navigate(`/organizer/events/${id}`);
     }
   };
 
   const handleSelectEvent = (id) => {
-    if (onSelectEvent) {
-      onSelectEvent(id);
+    if (props.onSelectEvent) {
+      props.onSelectEvent(id);
     } else if (navigate) {
       navigate(`/events/${id}`);
     }
   };
 
   const handleCreate = () => {
-    if (onCreateEventClick) {
-      onCreateEventClick();
+    if (props.onCreateEventClick) {
+      props.onCreateEventClick();
     } else if (navigate) {
       navigate("/events");
     }
@@ -178,6 +179,20 @@ export default function OrganizerDashboardPage({
 
     return list;
   }, [dashboardData, statusFilter, searchQuery]);
+
+  // Durum 0: Oturum kontrolü devam ediyor
+  const sessionLoading = context?.sessionState?.loading ?? false;
+  if (sessionLoading) {
+    return (
+      <div className="page-container">
+        <section className="card-panel">
+          <div className="empty-state">
+            <p>Organizatör oturumu ve cüzdan durumu kontrol ediliyor...</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   // Durum 1: Cüzdan bağlı değil
   if (!account) {

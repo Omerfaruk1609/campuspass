@@ -37,7 +37,7 @@ export default function HomePage(props) {
   const chainId = props.chainId ?? context?.chainId ?? null;
   const activeTab = props.activeTab ?? null;
   const onSelectTab = props.onSelectTab ?? null;
-  const onSelectEvent = props.onSelectEvent ?? ((id) => navigate(`/events/${id}`));
+  const onSelectEvent = props.onSelectEvent ?? null;
   const onCreateEvent = props.onCreateEvent ?? context?.handleCreateEvent;
   const onRegisterEvent = props.onRegisterEvent ?? context?.handleRegisterEvent;
   const onRefreshEvents = props.onRefreshEvents ?? context?.loadEvents;

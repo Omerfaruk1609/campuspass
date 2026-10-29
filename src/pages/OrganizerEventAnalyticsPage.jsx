@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import { ethers } from "ethers";
 import {
   MONAD_CHAIN_ID,
@@ -15,18 +16,15 @@ import {
 } from "../utils/apiClient";
 import { formatTurkeyDateOnly, formatTurkeyDateTime } from "../utils/eventMetadata";
 
-export default function OrganizerEventAnalyticsPage({
-  eventId: propEventId,
-  account,
-  onBack,
-  onOpenEventPage,
-}) {
+export default function OrganizerEventAnalyticsPage(props) {
+  const context = useAppContext();
   const params = useParams();
   const navigate = useNavigate();
 
-  const eventId = propEventId ?? (params.eventId ? Number(params.eventId) : null);
-  const handleBack = onBack || (() => (navigate ? navigate("/organizer") : null));
-  const handleOpenEvent = onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const account = props.account ?? context?.account ?? null;
+  const eventId = props.eventId ?? (params.eventId ? Number(params.eventId) : null);
+  const handleBack = props.onBack || (() => (navigate ? navigate("/organizer") : null));
+  const handleOpenEvent = props.onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [eventData, setEventData] = useState(null);
@@ -47,6 +45,11 @@ export default function OrganizerEventAnalyticsPage({
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [csvDownloading, setCsvDownloading] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(null);
+  const [eventAnnouncements, setEventAnnouncements] = useState([]);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
+  const [announcementBanner, setAnnouncementBanner] = useState(null);
 
   // SIWE state
   const [authenticating, setAuthenticating] = useState(false);
@@ -179,6 +182,19 @@ export default function OrganizerEventAnalyticsPage({
       setCopiedAddress(addr);
       setTimeout(() => setCopiedAddress(null), 2000);
     }
+  }
+
+  const sessionLoading = context?.sessionState?.loading ?? false;
+  if (sessionLoading) {
+    return (
+      <div className="page-container">
+        <section className="card-panel">
+          <div className="empty-state">
+            <p>Organizatör oturumu kontrol ediliyor...</p>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   if (!account) {

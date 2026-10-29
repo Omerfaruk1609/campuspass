@@ -1,8 +1,11 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useAppContext } from "../context/AppContext";
 import {
   approveCommunityApplicationOnBackend,
+  createCommunityAnnouncementOnBackend,
   fetchCommunityAnalyticsFromBackend,
+  fetchCommunityAnnouncementsFromBackend,
   fetchCommunityApplicationsFromBackend,
   fetchCommunityEventsFromBackend,
   fetchCommunityMembersFromBackend,
@@ -14,20 +17,17 @@ import {
   updateCommunityMemberRoleOnBackend,
   updateCommunityOnBackend,
 } from "../utils/apiClient";
-import { shortenAddress } from "../data/events";
+import { CONTRACT_ADDRESS, MONAD_CHAIN_ID, shortenAddress } from "../data/events";
 
-export default function CommunityManagePage({
-  slug: propSlug,
-  account,
-  onBack,
-  onOpenEvent,
-}) {
+export default function CommunityManagePage(props) {
+  const context = useAppContext();
   const params = useParams();
   const navigate = useNavigate();
 
-  const slug = propSlug ?? params.slug;
-  const handleBack = onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
-  const handleOpenEvent = onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
+  const account = props.account ?? context?.account ?? null;
+  const slug = props.slug ?? params.slug;
+  const handleBack = props.onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
+  const handleOpenEvent = props.onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -38,6 +38,10 @@ export default function CommunityManagePage({
   const [applications, setApplications] = useState([]);
   const [events, setEvents] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
 
   // Form State (Ayarlar)
   const [editShortDesc, setEditShortDesc] = useState("");
@@ -51,8 +55,8 @@ export default function CommunityManagePage({
 
   // Etkinlik Bağlama State
   const [linkEventId, setLinkEventId] = useState("");
-  const linkChainId = 10143;
-  const linkContractAddress = "0x12C8B599b2c34dB66Ba942Da818f056Ae6B1a8da";
+  const linkChainId = MONAD_CHAIN_ID;
+  const linkContractAddress = CONTRACT_ADDRESS;
 
   // İşlem Bildirimi
   const [banner, setBanner] = useState(null);
@@ -186,6 +190,41 @@ export default function CommunityManagePage({
   }
 
   // Etkinlik Bağla
+
+  async function handlePublishAnnouncement(e) {
+    if (e) e.preventDefault();
+    if (!announcementTitle.trim() || !announcementContent.trim()) {
+      setBanner({ type: "error", message: "Lütfen duyuru başlığı ve içeriği giriniz." });
+      return;
+    }
+
+    setPublishingAnnouncement(true);
+    setBanner(null);
+
+    try {
+      const created = await createCommunityAnnouncementOnBackend(slug, {
+        title: announcementTitle.trim(),
+        content: announcementContent.trim(),
+      });
+      setBanner({
+        type: "success",
+        message: `Duyuru başarıyla yayınlandı ve ${created?.recipientCount ?? members.length} aktif üyeye iletildi!`,
+      });
+      setAnnouncementTitle("");
+      setAnnouncementContent("");
+      // Yenile
+      const refreshed = await fetchCommunityAnnouncementsFromBackend(slug);
+      setAnnouncements(refreshed.items || []);
+    } catch (err) {
+      setBanner({
+        type: "error",
+        message: err.message || "Duyuru yayınlanırken bir hata oluştu.",
+      });
+    } finally {
+      setPublishingAnnouncement(false);
+    }
+  }
+
   async function handleLinkEvent(e) {
     e.preventDefault();
     setBanner(null);
@@ -658,6 +697,124 @@ export default function CommunityManagePage({
                           Bağlantıyı Kaldır
                         </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+
+        {/* DUYURULAR SEKMESİ */}
+        {activeTab === "announcements" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+            {/* Yeni Duyuru Formu */}
+            <div className="stitch-card" style={{ padding: "1.5rem" }}>
+              <h3 className="font-headline-sm" style={{ margin: "0 0 0.5rem 0" }}>
+                Yeni Topluluk Duyurusu Yayınla
+              </h3>
+              <p className="font-body-sm text-on-surface-variant" style={{ margin: "0 0 1.25rem 0" }}>
+                Yayınladığınız duyuru anında tüm aktif üyelere bildirim merkezi ve canlı bildirim akışı üzerinden iletilir.
+              </p>
+
+              <form onSubmit={handlePublishAnnouncement} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div>
+                  <label className="font-label-mono text-outline" style={{ display: "block", marginBottom: "0.35rem" }}>
+                    DUYURU BAŞLIĞI *
+                  </label>
+                  <input
+                    type="text"
+                    className="stitch-input"
+                    value={announcementTitle}
+                    onChange={(e) => setAnnouncementTitle(e.target.value)}
+                    placeholder="Örn: Yeni Atölye Çalışmamız Başlıyor!"
+                    maxLength={120}
+                    required
+                    style={{ width: "100%" }}
+                  />
+                </div>
+
+                <div>
+                  <label className="font-label-mono text-outline" style={{ display: "block", marginBottom: "0.35rem" }}>
+                    DUYURU METNİ *
+                  </label>
+                  <textarea
+                    className="stitch-input"
+                    rows={4}
+                    value={announcementContent}
+                    onChange={(e) => setAnnouncementContent(e.target.value)}
+                    placeholder="Topluluk üyelerine aktarmak istediğiniz detayları yazın..."
+                    maxLength={2000}
+                    required
+                    style={{ width: "100%", resize: "vertical" }}
+                  />
+                  <div style={{ textAlign: "right", fontSize: "0.75rem", color: "var(--stitch-outline)", marginTop: "0.25rem" }}>
+                    {announcementContent.length} / 2000
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="submit"
+                    className="stitch-btn-primary"
+                    disabled={publishingAnnouncement || !announcementTitle.trim() || !announcementContent.trim()}
+                    style={{ padding: "0.6rem 1.5rem" }}
+                  >
+                    {publishingAnnouncement ? "Yayınlanıyor..." : "📢 Duyuruyu Yayınla"}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Geçmiş Duyurular */}
+            <div className="stitch-card" style={{ padding: "1.5rem" }}>
+              <h3 className="font-headline-sm" style={{ margin: "0 0 1rem 0" }}>
+                Yayınlanan Duyurular ({announcements.length})
+              </h3>
+
+              {announcements.length === 0 ? (
+                <div style={{ padding: "2rem", textAlign: "center", color: "var(--stitch-outline)" }}>
+                  Henüz yayınlanmış bir topluluk duyurusu bulunmuyor.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {announcements.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: "1rem 1.25rem",
+                        borderRadius: "0.75rem",
+                        backgroundColor: "rgba(255, 255, 255, 0.02)",
+                        border: "1px solid rgba(142, 144, 161, 0.15)",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                        <div>
+                          <h4 style={{ fontSize: "1rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "#ffffff" }}>
+                            {item.title}
+                          </h4>
+                          <span style={{ fontSize: "0.75rem", color: "var(--stitch-outline)" }}>
+                            {new Date(item.createdAt).toLocaleString("tr-TR")} • {shortenAddress(item.authorWallet)}
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "9999px",
+                            backgroundColor: "rgba(111, 136, 255, 0.15)",
+                            color: "#b9c3ff",
+                            border: "1px solid rgba(111, 136, 255, 0.3)",
+                          }}
+                        >
+                          👥 {item.recipientCount} üyeye ulaştı
+                        </span>
+                      </div>
+                      <p style={{ margin: "0.75rem 0 0 0", fontSize: "0.875rem", color: "var(--stitch-on-surface-variant)", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+                        {item.content}
+                      </p>
                     </div>
                   ))}
                 </div>

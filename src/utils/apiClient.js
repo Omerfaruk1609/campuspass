@@ -237,18 +237,37 @@ export async function fetchStudentProfileFromBackend(
   };
 }
 
-// Sekmeler arası oturum senkronizasyonu için anahtar ve yayınlayıcı
+// Sekmeler arası ve aynı sekme içi oturum senkronizasyonu için anahtar ve yayınlayıcı
 export const AUTH_STORAGE_EVENT_KEY = "campuspass_auth_event";
 
+export function isValidSiweSigner(candidate) {
+  return Boolean(candidate && typeof candidate.signMessage === "function");
+}
+
 export function broadcastAuthEvent(type, payload = {}) {
-  if (typeof window !== "undefined" && window.localStorage) {
-    try {
-      window.localStorage.setItem(
-        AUTH_STORAGE_EVENT_KEY,
-        JSON.stringify({ type, timestamp: Date.now(), ...payload })
-      );
-    } catch {
-      // localStorage erişim kısıtlaması göz ardı edilir
+  const eventData = { type, timestamp: Date.now(), ...payload };
+  if (typeof window !== "undefined") {
+    if (window.localStorage) {
+      try {
+        window.localStorage.setItem(
+          AUTH_STORAGE_EVENT_KEY,
+          JSON.stringify(eventData)
+        );
+      } catch {
+        // localStorage erişim kısıtlaması göz ardı edilir
+      }
+    }
+    if (
+      typeof window.dispatchEvent === "function" &&
+      typeof CustomEvent === "function"
+    ) {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(AUTH_STORAGE_EVENT_KEY, { detail: eventData })
+        );
+      } catch {
+        // CustomEvent kısıtlaması göz ardı edilir
+      }
     }
   }
 }
@@ -259,7 +278,7 @@ export function broadcastAuthEvent(type, payload = {}) {
  */
 export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
   let walletAddress = null;
-  let signer = maybeSigner || null;
+  let signer = isValidSiweSigner(maybeSigner) ? maybeSigner : null;
   let chainId = MONAD_CHAIN_ID;
   let statement = "CampusPass islemleri icin cuzdaninizi dogrulayin.";
   let customFetch = null;
@@ -267,8 +286,10 @@ export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
   if (typeof optionsOrAddress === "string") {
     walletAddress = optionsOrAddress;
   } else if (optionsOrAddress && typeof optionsOrAddress === "object") {
-    walletAddress = optionsOrAddress.walletAddress || optionsOrAddress.account;
-    signer = optionsOrAddress.signer || signer;
+    walletAddress = optionsOrAddress.walletAddress || optionsOrAddress.account || null;
+    if (isValidSiweSigner(optionsOrAddress.signer)) {
+      signer = optionsOrAddress.signer;
+    }
     chainId = optionsOrAddress.chainId || chainId;
     statement = optionsOrAddress.statement || statement;
     customFetch = optionsOrAddress.customFetch || customFetch;
@@ -287,6 +308,11 @@ export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
     activeAuthState.walletAddress.toLowerCase() === checksumWallet.toLowerCase() &&
     activeAuthState.csrfToken
   ) {
+    broadcastAuthEvent("LOGIN", {
+      walletAddress: activeAuthState.walletAddress,
+      csrfToken: activeAuthState.csrfToken,
+      expiresAt: activeAuthState.expiresAt,
+    });
     return activeAuthState;
   }
 
@@ -307,20 +333,25 @@ export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
         csrfToken: sessionCheck.data.csrfToken,
         expiresAt: sessionCheck.data.expiresAt,
       };
+      broadcastAuthEvent("LOGIN", {
+        walletAddress: activeAuthState.walletAddress,
+        csrfToken: activeAuthState.csrfToken,
+        expiresAt: activeAuthState.expiresAt,
+      });
       return activeAuthState;
     }
   } catch {
     // Oturum kontrolü başarısızsa yeni SIWE akışı başlat
   }
 
-  // 3. İmzacı temini: Eğer signer sağlanmadıysa tarayıcı MetaMask sağlayıcısından al
-  let effectiveSigner = signer;
+  // 3. İmzacı temini: Eğer geçerli bir signer sağlanmadıysa tarayıcı MetaMask sağlayıcısından al
+  let effectiveSigner = isValidSiweSigner(signer) ? signer : null;
   if (!effectiveSigner && typeof window !== "undefined" && window.ethereum) {
     const provider = new ethers.BrowserProvider(window.ethereum);
     effectiveSigner = await provider.getSigner();
   }
 
-  if (!effectiveSigner) {
+  if (!isValidSiweSigner(effectiveSigner)) {
     throw new Error(
       "SIWE oturumu açmak için cüzdan imzası gereklidir. Lütfen cüzdanınızı bağlayın."
     );
@@ -356,10 +387,16 @@ export async function ensureSiweSession(optionsOrAddress, maybeSigner) {
 
   activeAuthState = {
     authenticated: true,
-    walletAddress: verifyRes.data.walletAddress,
+    walletAddress: ethers.getAddress(verifyRes.data.walletAddress),
     csrfToken: verifyRes.data.csrfToken,
     expiresAt: verifyRes.data.expiresAt,
   };
+
+  broadcastAuthEvent("LOGIN", {
+    walletAddress: activeAuthState.walletAddress,
+    csrfToken: activeAuthState.csrfToken,
+    expiresAt: activeAuthState.expiresAt,
+  });
 
   return activeAuthState;
 }
@@ -704,6 +741,7 @@ export async function fetchCommunitiesFromBackend({
   university = "ALL",
   page = 1,
   limit = 20,
+  customFetch = null,
 } = {}) {
   const params = new URLSearchParams();
   if (search) params.append("search", search);
@@ -936,6 +974,201 @@ export async function fetchStudentAccountProfileFromBackend(walletAddress, { cus
 export async function updateStudentProfileOnBackend(payload, { customFetch = null } = {}) {
   const res = await apiRequest("/students/profile", {
     method: "PATCH",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function fetchNotificationsFromBackend(
+  { page = 1, limit = 20, unreadOnly = false, cursor = undefined } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams();
+  if (page) params.set("page", String(page));
+  if (limit) params.set("limit", String(limit));
+  if (unreadOnly) params.set("unreadOnly", "true");
+  if (cursor) params.set("cursor", String(cursor));
+
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiRequest(`/notifications${qs}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function fetchUnreadNotificationCountFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/unread-count", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data || { unreadCount: 0 };
+}
+
+export async function markNotificationAsReadOnBackend(notificationId, { customFetch = null } = {}) {
+  const res = await apiRequest(`/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "PATCH",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function markAllNotificationsAsReadOnBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/read-all", {
+    method: "PATCH",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function deleteNotificationOnBackend(notificationId, { customFetch = null } = {}) {
+  const res = await apiRequest(`/notifications/${encodeURIComponent(notificationId)}`, {
+    method: "DELETE",
+    customFetch,
+  });
+  return res.message;
+}
+
+export async function fetchNotificationPreferencesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/preferences", {
+    method: "GET",
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function updateNotificationPreferencesOnBackend(payload, { customFetch = null } = {}) {
+  const res = await apiRequest("/notifications/preferences", {
+    method: "PATCH",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export function connectNotificationStream({
+  onNotification = null,
+  onUnreadCount = null,
+  onConnected = null,
+  onError = null,
+  EventSourceClass = null,
+} = {}) {
+  const ES = EventSourceClass || (typeof window !== "undefined" ? window.EventSource : globalThis.EventSource);
+  if (!ES) {
+    return () => {};
+  }
+
+  const streamUrl = `${API_BASE_URL}/notifications/stream`;
+  let es = null;
+
+  try {
+    es = new ES(streamUrl, { withCredentials: true });
+  } catch (err) {
+    if (typeof onError === "function") onError(err);
+    return () => {};
+  }
+
+  es.addEventListener("connected", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onConnected === "function") onConnected(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.addEventListener("notification", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onNotification === "function") onNotification(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.addEventListener("unread_count", (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (typeof onUnreadCount === "function") onUnreadCount(data);
+    } catch {
+      // ignore JSON parse error
+    }
+  });
+
+  es.onerror = (err) => {
+    if (typeof onError === "function") onError(err);
+    if (es.readyState === 2 /* CLOSED */) {
+      try {
+        es.close();
+      } catch {}
+    }
+  };
+
+  return () => {
+    try {
+      es.close();
+    } catch {
+      // ignore close errors
+    }
+  };
+}
+
+export async function fetchCommunityAnnouncementsFromBackend(
+  idOrSlug,
+  { page = 1, limit = 20 } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/announcements?${params.toString()}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function createCommunityAnnouncementOnBackend(
+  idOrSlug,
+  payload,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/communities/${encodeURIComponent(idOrSlug)}/announcements`, {
+    method: "POST",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function fetchEventAnnouncementsFromBackend(
+  eventId,
+  { page = 1, limit = 20 } = {},
+  { customFetch = null } = {}
+) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await apiRequest(`/events/${encodeURIComponent(eventId)}/announcements?${params.toString()}`, {
+    method: "GET",
+    customFetch,
+  });
+  return {
+    items: res.data || [],
+    pagination: res.pagination || {},
+  };
+}
+
+export async function createEventAnnouncementOnBackend(
+  eventId,
+  payload,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/events/${encodeURIComponent(eventId)}/announcements`, {
+    method: "POST",
     body: payload,
     customFetch,
   });

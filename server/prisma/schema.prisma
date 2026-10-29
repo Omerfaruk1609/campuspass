@@ -236,3 +236,59 @@ model StudentProfile {
 
   @@index([walletAddress])
 }
+
+
+/// Kullanıcı bildirim modeli (Faz 15)
+model Notification {
+  id              String    @id @default(cuid())
+  recipientWallet String
+  type            String
+  title           String
+  message         String
+  destinationUrl  String?
+  read            Boolean   @default(false)
+  readAt          DateTime?
+  metadata        String?
+  dedupKey        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([recipientWallet])
+  @@index([recipientWallet, read])
+  @@index([recipientWallet, createdAt])
+  @@index([recipientWallet, dedupKey])
+}
+
+/// Topluluk ve etkinlik duyuru modeli (Faz 15)
+model Announcement {
+  id              String   @id @default(cuid())
+  targetType      String
+  communityId     String?
+  eventId         Int?
+  chainId         Int?
+  contractAddress String?
+  authorWallet    String
+  title           String
+  content         String
+  recipientCount  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([targetType, communityId])
+  @@index([targetType, eventId])
+  @@index([authorWallet])
+}
+
+/// Kullanıcı bildirim tercihleri modeli (Faz 15)
+model NotificationPreference {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  eventUpdates  Boolean  @default(true)
+  community     Boolean  @default(true)
+  announcements Boolean  @default(true)
+  certificates  Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([walletAddress])
+}

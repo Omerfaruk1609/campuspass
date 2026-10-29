@@ -1,12 +1,23 @@
 import { ethers } from "ethers";
 import deployment from "./deployment.json" with { type: "json" };
 
-export const MONAD_CHAIN_ID = 10143;
-export const MONAD_CHAIN_ID_HEX = "0x279f";
-export const MONAD_RPC_URL = "https://testnet-rpc.monad.xyz";
-export const MONAD_EXPLORER_URL = "https://testnet.monadexplorer.com";
+const envChainId =
+  typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_CHAIN_ID
+    ? Number(import.meta.env.VITE_MONAD_CHAIN_ID)
+    : 10143;
 
-export const CONTRACT_ADDRESS = deployment.address;
+export const MONAD_CHAIN_ID = envChainId;
+export const MONAD_CHAIN_ID_HEX = "0x" + envChainId.toString(16);
+export const MONAD_RPC_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_RPC_URL) ||
+  "https://testnet-rpc.monad.xyz";
+export const MONAD_EXPLORER_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_MONAD_EXPLORER_URL) ||
+  "https://testnet.monadexplorer.com";
+
+export const CONTRACT_ADDRESS =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_CONTRACT_ADDRESS) ||
+  deployment.address;
 
 export const CAMPUS_PASS_ABI = [
   "function nextEventId() view returns (uint256)",
@@ -33,12 +44,62 @@ export const MONAD_NETWORK_PARAMS = {
   blockExplorerUrls: [MONAD_EXPLORER_URL],
 };
 
+let cachedReadOnlyProvider = null;
+let cachedReadOnlyContract = null;
+
+export function getReadOnlyProvider() {
+  if (!cachedReadOnlyProvider) {
+    cachedReadOnlyProvider = new ethers.JsonRpcProvider(
+      MONAD_RPC_URL,
+      {
+        name: "monad-testnet",
+        chainId: MONAD_CHAIN_ID,
+      },
+      { staticNetwork: true }
+    );
+  }
+  return cachedReadOnlyProvider;
+}
+
 export function getReadOnlyContract() {
-  const provider = new ethers.JsonRpcProvider(MONAD_RPC_URL, {
-    name: "monad-testnet",
-    chainId: MONAD_CHAIN_ID,
-  });
-  return new ethers.Contract(CONTRACT_ADDRESS, CAMPUS_PASS_ABI, provider);
+  if (!cachedReadOnlyContract) {
+    cachedReadOnlyContract = new ethers.Contract(
+      CONTRACT_ADDRESS,
+      CAMPUS_PASS_ABI,
+      getReadOnlyProvider()
+    );
+  }
+  return cachedReadOnlyContract;
+}
+
+export async function callWithRetry(fn, maxRetries = 3, baseDelayMs = 300) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      const errMsg = String(
+        err?.info?.error?.message ||
+        err?.error?.message ||
+        err?.message ||
+        ""
+      );
+      const isRateLimit =
+        err?.info?.error?.code === -32011 ||
+        err?.code === -32011 ||
+        errMsg.includes("requests limited to") ||
+        errMsg.includes("rate limit") ||
+        errMsg.includes("limited to a 100 range") ||
+        err?.status === 429;
+      if (isRateLimit && attempt <= maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 export async function getSignerContract() {
@@ -90,12 +151,21 @@ export function parseBlockchainError(error) {
     return "İşlem cüzdan üzerinden kullanıcı tarafından reddedildi.";
   }
 
+  const nestedRpcMessage =
+    error?.info?.error?.message ||
+    error?.error?.message ||
+    error?.info?.payload?.error?.message ||
+    "";
+  const nestedRpcCode = error?.info?.error?.code ?? error?.error?.code;
+
   const rawMessage =
     error.reason ||
     error.shortMessage ||
-    error?.info?.error?.message ||
+    nestedRpcMessage ||
     error.message ||
     String(error);
+
+  const fullDiagnostics = `${rawMessage} ${nestedRpcMessage} ${nestedRpcCode || ""} ${error.code || ""}`;
 
   const errorMap = {
     "Title required": "Etkinlik başlığı boş bırakılamaz.",
@@ -115,8 +185,60 @@ export function parseBlockchainError(error) {
     }
   }
 
-  if (rawMessage.includes("insufficient funds")) {
+  if (fullDiagnostics.includes("insufficient funds")) {
     return "Cüzdanınızda işlem ücretini (gas) karşılamak için yeterli Testnet MON bulunmuyor.";
+  }
+
+  // 1. RPC rate limit veya blok sorgu aralığı sınırı (CALL_EXCEPTION veya missing revert data içine gömülmüş olabilir)
+  if (
+    fullDiagnostics.includes("-32011") ||
+    fullDiagnostics.includes("requests limited to") ||
+    fullDiagnostics.includes("limited to a 100 range") ||
+    fullDiagnostics.includes("rate limit") ||
+    fullDiagnostics.includes("429")
+  ) {
+    return "Monad Testnet RPC istek veya blok aralığı sınırı aşıldı (en fazla 15 istek/sn). Lütfen birkaç saniye sonra tekrar deneyin.";
+  }
+
+  // 2. RPC bağlantı ve ağ sunucusu erişim hataları
+  if (
+    fullDiagnostics.includes("ENOTFOUND") ||
+    fullDiagnostics.includes("ECONNREFUSED") ||
+    fullDiagnostics.includes("failed to detect network") ||
+    fullDiagnostics.includes("fetch failed") ||
+    fullDiagnostics.includes("Failed to fetch") ||
+    error.code === "SERVER_ERROR" ||
+    error.code === "NETWORK_ERROR"
+  ) {
+    return "Monad Testnet RPC sunucusuna bağlanılamadı. Lütfen internet bağlantınızı veya RPC URL'sini kontrol edin.";
+  }
+
+  // 3. Yanlış ağ / Chain ID uyumsuzluğu
+  if (
+    fullDiagnostics.includes("Yanlış ağdasınız") ||
+    fullDiagnostics.includes("network mismatch") ||
+    fullDiagnostics.includes("Chain ID")
+  ) {
+    return "Yanlış ağdasınız. Lütfen cüzdanınızdan Monad Testnet (Chain ID 10143) ağına geçin.";
+  }
+
+  // 4. SIWE / Oturum yetkilendirme hataları
+  if (
+    fullDiagnostics.includes("SESSION_REQUIRED") ||
+    fullDiagnostics.includes("SIWE kimlik doğrulaması") ||
+    fullDiagnostics.includes("Unauthorized")
+  ) {
+    return "SIWE oturumunuz bulunmuyor veya süresi dolmuş. Lütfen cüzdanınızla tekrar oturum açın.";
+  }
+
+  // 5. Akıllı sözleşme yokluğu, eksik deployment veya boş revert verisi (gerçek revert)
+  if (
+    rawMessage.includes("missing revert data") ||
+    rawMessage.includes("could not decode result data") ||
+    (error.code === "BAD_DATA" && String(error.value) === "0x") ||
+    (error.code === "CALL_EXCEPTION" && (!error.data || error.data === "0x"))
+  ) {
+    return "Akıllı sözleşmeye ulaşılamadı veya belirtilen adreste sözleşme kodu bulunamadı. Lütfen ağın Monad Testnet (10143) olduğunu ve sözleşme adresini kontrol edin.";
   }
 
   return rawMessage;

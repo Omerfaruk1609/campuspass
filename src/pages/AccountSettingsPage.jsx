@@ -4,7 +4,9 @@ import { useAppContext } from "../context/AppContext";
 import { MONAD_CHAIN_ID, MONAD_EXPLORER_URL, shortenAddress } from "../data/events";
 import {
   ensureSiweSession,
+  fetchNotificationPreferencesFromBackend,
   fetchStudentAccountProfileFromBackend,
+  updateNotificationPreferencesOnBackend,
   updateStudentProfileOnBackend,
 } from "../utils/apiClient";
 
@@ -16,6 +18,7 @@ export default function AccountSettingsPage() {
     handleLogout,
     handleDisconnectWallet,
     handleSwitchNetwork,
+    handleSiweLogin,
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState("profile"); // profile | security | privacy
@@ -25,6 +28,15 @@ export default function AccountSettingsPage() {
 
   // Form State
   const [displayName, setDisplayName] = useState("");
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    eventUpdates: true,
+    community: true,
+    announcements: true,
+    certificates: true,
+  });
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [prefsBanner, setPrefsBanner] = useState(null);
   const [university, setUniversity] = useState("Monad Üniversitesi");
   const [department, setDepartment] = useState("");
   const [bio, setBio] = useState("");
@@ -38,6 +50,47 @@ export default function AccountSettingsPage() {
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
 
   // Profil verisini yükle
+
+  useEffect(() => {
+    if (!account) return;
+    setLoadingPrefs(true);
+    fetchNotificationPreferencesFromBackend()
+      .then((data) => {
+        if (data) {
+          setNotificationPrefs({
+            eventUpdates: Boolean(data.eventUpdates),
+            community: Boolean(data.community),
+            announcements: Boolean(data.announcements),
+            certificates: Boolean(data.certificates),
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPrefs(false));
+  }, [account]);
+
+  async function handleSaveNotificationPreferences() {
+    setSavingPrefs(true);
+    setPrefsBanner(null);
+    try {
+      if (!sessionState?.authenticated) {
+        await ensureSiweSession(account);
+      }
+      const updated = await updateNotificationPreferencesOnBackend(notificationPrefs);
+      setPrefsBanner({
+        type: "success",
+        message: "Bildirim tercihleriniz başarıyla kaydedildi.",
+      });
+    } catch (err) {
+      setPrefsBanner({
+        type: "error",
+        message: err.message || "Bildirim tercihleri kaydedilemedi.",
+      });
+    } finally {
+      setSavingPrefs(false);
+    }
+  }
+
   const loadProfile = useCallback(async () => {
     if (!account) return;
     setProfileLoading(true);
@@ -118,8 +171,15 @@ export default function AccountSettingsPage() {
     if (!account) return;
     setSiweLoggingIn(true);
     try {
-      await ensureSiweSession(account);
-      window.location.reload();
+      if (typeof handleSiweLogin === "function") {
+        await handleSiweLogin();
+      } else {
+        await ensureSiweSession(account);
+      }
+      setBanner({
+        type: "success",
+        message: "SIWE oturumu başarıyla açıldı.",
+      });
     } catch (err) {
       setBanner({
         type: "error",
@@ -302,6 +362,309 @@ export default function AccountSettingsPage() {
             Gizlilik ve Tercihler
           </button>
         </div>
+
+
+        {/* TAB 4: BİLDİRİM TERCİHLERİ */}
+        {activeTab === "notifications" && (
+          <div
+            className="stitch-card"
+            style={{
+              backgroundColor: "var(--stitch-surface-container, rgba(255, 255, 255, 0.03))",
+              border: "1px solid rgba(185, 195, 255, 0.15)",
+              borderRadius: "0.75rem",
+              padding: "1.75rem",
+            }}
+          >
+            <h3
+              style={{
+                fontSize: "1.25rem",
+                fontWeight: 700,
+                color: "var(--stitch-on-surface, #f8fafc)",
+                margin: "0 0 0.5rem 0",
+              }}
+            >
+              Bildirim ve İletişim Tercihleri
+            </h3>
+            <p
+              style={{
+                fontSize: "0.875rem",
+                color: "var(--stitch-outline, #94a3b8)",
+                margin: "0 0 1.5rem 0",
+              }}
+            >
+              Hangi kategorilerde anlık sistem bildirimleri almak istediğinizi belirleyin.
+            </p>
+
+            {prefsBanner && (
+              <div
+                style={{
+                  padding: "0.75rem 1rem",
+                  borderRadius: "0.5rem",
+                  marginBottom: "1.25rem",
+                  backgroundColor:
+                    prefsBanner.type === "success"
+                      ? "rgba(16, 185, 129, 0.12)"
+                      : "rgba(239, 68, 68, 0.12)",
+                  border:
+                    prefsBanner.type === "success"
+                      ? "1px solid rgba(16, 185, 129, 0.3)"
+                      : "1px solid rgba(239, 68, 68, 0.3)",
+                  color: prefsBanner.type === "success" ? "#6ee7b7" : "#fca5a5",
+                  fontSize: "0.875rem",
+                }}
+              >
+                {prefsBanner.message}
+              </div>
+            )}
+
+            {/* Toggle Items */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {/* Event Updates */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "1rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(142, 144, 161, 0.15)",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                    Etkinlik Güncellemeleri ve İptalleri
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "var(--stitch-outline, #94a3b8)" }}>
+                    Kayıtlı olduğunuz etkinliklerin tarihi, saati, konumu güncellendiğinde veya etkinlik iptal edildiğinde bildirim al.
+                  </div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: "50px", height: "26px", flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={notificationPrefs.eventUpdates}
+                    onChange={(e) =>
+                      setNotificationPrefs((prev) => ({ ...prev, eventUpdates: e.target.checked }))
+                    }
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      cursor: "pointer",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: notificationPrefs.eventUpdates ? "#10b981" : "rgba(142, 144, 161, 0.3)",
+                      transition: "0.3s",
+                      borderRadius: "34px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        height: "18px",
+                        width: "18px",
+                        left: notificationPrefs.eventUpdates ? "26px" : "4px",
+                        bottom: "4px",
+                        backgroundColor: "white",
+                        transition: "0.3s",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Community Updates */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "1rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(142, 144, 161, 0.15)",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                    Topluluk Üyelik ve Başvuru Bildirimleri
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "var(--stitch-outline, #94a3b8)" }}>
+                    Topluluk başvurunuz onaylandığında, reddedildiğinde veya topluluktaki rolünüz değiştiğinde bildirim al.
+                  </div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: "50px", height: "26px", flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={notificationPrefs.community}
+                    onChange={(e) =>
+                      setNotificationPrefs((prev) => ({ ...prev, community: e.target.checked }))
+                    }
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      cursor: "pointer",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: notificationPrefs.community ? "#10b981" : "rgba(142, 144, 161, 0.3)",
+                      transition: "0.3s",
+                      borderRadius: "34px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        height: "18px",
+                        width: "18px",
+                        left: notificationPrefs.community ? "26px" : "4px",
+                        bottom: "4px",
+                        backgroundColor: "white",
+                        transition: "0.3s",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Announcements */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "1rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(142, 144, 161, 0.15)",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                    Topluluk ve Etkinlik Duyuruları
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "var(--stitch-outline, #94a3b8)" }}>
+                    Topluluk yöneticileri veya etkinlik organizatörleri tarafından yayınlanan önemli duyuruları al.
+                  </div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: "50px", height: "26px", flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={notificationPrefs.announcements}
+                    onChange={(e) =>
+                      setNotificationPrefs((prev) => ({ ...prev, announcements: e.target.checked }))
+                    }
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      cursor: "pointer",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: notificationPrefs.announcements ? "#10b981" : "rgba(142, 144, 161, 0.3)",
+                      transition: "0.3s",
+                      borderRadius: "34px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        height: "18px",
+                        width: "18px",
+                        left: notificationPrefs.announcements ? "26px" : "4px",
+                        bottom: "4px",
+                        backgroundColor: "white",
+                        transition: "0.3s",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Certificates */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "1rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(142, 144, 161, 0.15)",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                    Sertifika Bildirimleri
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "var(--stitch-outline, #94a3b8)" }}>
+                    Katılım sağladığınız bir etkinlik için dijital katılım sertifikası düzenlendiğinde bildirim al.
+                  </div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: "50px", height: "26px", flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={notificationPrefs.certificates}
+                    onChange={(e) =>
+                      setNotificationPrefs((prev) => ({ ...prev, certificates: e.target.checked }))
+                    }
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      cursor: "pointer",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: notificationPrefs.certificates ? "#10b981" : "rgba(142, 144, 161, 0.3)",
+                      transition: "0.3s",
+                      borderRadius: "34px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        height: "18px",
+                        width: "18px",
+                        left: notificationPrefs.certificates ? "26px" : "4px",
+                        bottom: "4px",
+                        backgroundColor: "white",
+                        transition: "0.3s",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.75rem" }}>
+              <button
+                type="button"
+                onClick={handleSaveNotificationPreferences}
+                disabled={savingPrefs || loadingPrefs}
+                className="stitch-btn-primary"
+                style={{ padding: "0.75rem 2rem", fontSize: "0.95rem" }}
+              >
+                {savingPrefs ? "Kaydediliyor..." : "Bildirim Tercihlerini Kaydet"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: ÖĞRENCİ PROFİLİ */}
         {activeTab === "profile" && (

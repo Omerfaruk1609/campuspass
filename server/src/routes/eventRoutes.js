@@ -10,6 +10,14 @@ export function createEventRoutes({ eventController, requireOrganizerSession }) 
     eventController.getEventMetadata(req, res)
   );
 
+  // Etkinlik Duyuruları (GET herkese açık, POST organizatör oturumu gerektirir)
+  router.get("/:eventId/announcements", (req, res) =>
+    eventController.getAnnouncements(req, res)
+  );
+  router.post("/:eventId/announcements", requireOrganizerSession, (req, res) =>
+    eventController.createAnnouncement(req, res)
+  );
+
   // Organizatör yetkisi (SIWE Oturumu + CSRF + Canlı Blokzincir Organizatör Kontrolü) gerektiren endpoint'ler
   router.post("/:eventId/metadata", requireOrganizerSession, (req, res) =>
     eventController.createMetadata(req, res)

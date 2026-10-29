@@ -17,6 +17,7 @@ const CommunityProfilePage = lazy(() => import("../pages/CommunityProfilePage"))
 const CommunityManagePage = lazy(() => import("../pages/CommunityManagePage"));
 const CertificateVerificationPage = lazy(() => import("../pages/CertificateVerificationPage"));
 const AccountSettingsPage = lazy(() => import("../pages/AccountSettingsPage"));
+const NotificationsPage = lazy(() => import("../pages/NotificationsPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 export default function AppRoutes() {
@@ -74,6 +75,16 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <AccountSettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Notifications (Bildirim Merkezi) */}
+        <Route
+          path="notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
             </ProtectedRoute>
           }
         />

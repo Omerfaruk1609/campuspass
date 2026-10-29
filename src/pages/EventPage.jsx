@@ -3,8 +3,10 @@ import { useAppContext } from "../context/AppContext";
 import { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
+  CONTRACT_ADDRESS,
   MONAD_CHAIN_ID,
   MONAD_EXPLORER_URL,
+  callWithRetry,
   getReadOnlyContract,
   parseBlockchainError,
   shortenAddress,
@@ -19,6 +21,7 @@ import {
   EVENT_CATEGORIES,
   formatTurkeyDateOnly,
   formatTurkeyDateTime,
+  mergeOnChainEventWithMetadata,
   validatePosterFile,
 } from "../utils/eventMetadata";
 
@@ -82,11 +85,129 @@ export default function EventPage(props) {
   const onRegisterEvent = props.onRegisterEvent ?? context?.handleRegisterEvent;
   const onMarkAttendance = props.onMarkAttendance ?? context?.handleMarkAttendance;
   const onUpdateMetadata = props.onUpdateMetadata ?? context?.handleUpdateEventMetadata;
+  const onConnectWallet = props.onConnectWallet ?? context?.handleConnectWallet;
+  const _onSwitchNetwork = props.onSwitchNetwork ?? context?.handleSwitchNetwork;
+  const isConnecting = props.isConnecting ?? context?.isConnecting ?? false;
   const onBack = props.onBack || (() => (navigate ? navigate("/events") : null));
 
   const targetEventId = props.event ? props.event.id : (params.eventId ? Number(params.eventId) : null);
-  const event = props.event ?? (context?.events ? context.events.find((e) => e.id === targetEventId) : null);
+  const eventFromContext = props.event ?? (context?.events ? context.events.find((e) => e.id === targetEventId) : null);
   const loadingEvents = context?.loadingEvents ?? false;
+
+  const [singleEvent, setSingleEvent] = useState(null);
+  const [loadingSingle, setLoadingSingle] = useState(false);
+  const [singleFetchAttempted, setSingleFetchAttempted] = useState(false);
+  const [userEventStatus, setUserEventStatus] = useState(null);
+
+  // Tekil etkinlik yükleme fallback'i (Doğrudan URL /events/:eventId veya yenileme durumunda)
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSingleEvent() {
+      if (!targetEventId || eventFromContext || singleFetchAttempted) return;
+      setLoadingSingle(true);
+      try {
+        const contract = getReadOnlyContract();
+        const ev = await callWithRetry(() => contract.events(targetEventId));
+        if (Number(ev.id) === 0) {
+          if (isMounted) {
+            setSingleEvent(null);
+            setSingleFetchAttempted(true);
+          }
+          return;
+        }
+
+        let isReg = false;
+        let isAtt = false;
+        if (account) {
+          try {
+            const [r, a] = await Promise.all([
+              callWithRetry(() => contract.registered(targetEventId, account)),
+              callWithRetry(() => contract.attended(targetEventId, account)),
+            ]);
+            isReg = Boolean(r);
+            isAtt = Boolean(a);
+          } catch {
+            // ignore
+          }
+        }
+
+        const baseOnChainEvent = {
+          id: Number(ev.id),
+          organizer: ev.organizer,
+          title: ev.title,
+          capacity: Number(ev.capacity),
+          registeredCount: Number(ev.registeredCount),
+          active: Boolean(ev.active),
+          isRegistered: isReg,
+          isAttended: isAtt,
+          verifiedAttendanceCount: isAtt ? 1 : 0,
+        };
+
+        const merged = mergeOnChainEventWithMetadata(baseOnChainEvent, {
+          chainId: MONAD_CHAIN_ID,
+          contractAddress: CONTRACT_ADDRESS,
+        });
+
+        if (isMounted) {
+          setSingleEvent(merged);
+          setSingleFetchAttempted(true);
+        }
+      } catch {
+        if (isMounted) {
+          setSingleFetchAttempted(true);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingSingle(false);
+        }
+      }
+    }
+
+    fetchSingleEvent();
+    return () => {
+      isMounted = false;
+    };
+  }, [targetEventId, eventFromContext, account, singleFetchAttempted]);
+
+  const event = props.event ?? eventFromContext ?? singleEvent;
+
+  // Canlı kullanıcı kayıt & katılım durumu kontrolü
+  useEffect(() => {
+    let isMounted = true;
+    async function checkUserStatus() {
+      if (!targetEventId || !account) {
+        if (isMounted) setUserEventStatus(null);
+        return;
+      }
+      try {
+        const contract = getReadOnlyContract();
+        const [reg, att] = await Promise.all([
+          callWithRetry(() => contract.registered(targetEventId, account)),
+          callWithRetry(() => contract.attended(targetEventId, account)),
+        ]);
+        if (isMounted) {
+          setUserEventStatus({
+            isRegistered: Boolean(reg),
+            isAttended: Boolean(att),
+          });
+        }
+      } catch {
+        // Fallback to event object
+      }
+    }
+    checkUserStatus();
+    return () => {
+      isMounted = false;
+    };
+  }, [targetEventId, account]);
+
+  const isRegistered = userEventStatus
+    ? userEventStatus.isRegistered
+    : Boolean(event?.isRegistered);
+  const isAttended = userEventStatus
+    ? userEventStatus.isAttended
+    : Boolean(event?.isAttended);
+
   // Öğrenci QR State
   const [qrTicket, setQrTicket] = useState(null);
   const [qrGenerating, setQrGenerating] = useState(false);
@@ -130,6 +251,26 @@ export default function EventPage(props) {
     event?.cancelReason || ""
   );
   const [editError, setEditError] = useState("");
+
+  // Event yüklendiğinde düzenleme alanlarını senkronize et
+  useEffect(() => {
+    if (event) {
+      setEditCommunity(event.community || "");
+      setEditCategory(event.category || "Blockchain");
+      setEditDescription(event.description || "");
+      setEditDate(event.date || "2026-11-15");
+      setEditStartTime(event.startTime || "14:00");
+      setEditEndTime(event.endTime || "17:00");
+      setEditDeadline(
+        toDatetimeLocalValue(event.registrationDeadline) || "2026-11-15T13:30"
+      );
+      setEditCampus(event.location?.campus || "");
+      setEditBuilding(event.location?.building || "");
+      setEditRoom(event.location?.room || "");
+      setEditPosterUrl(event.posterUrl || "");
+      setCancelReasonInput(event.cancelReason || "");
+    }
+  }, [event]);
 
   // Öğrenci QR geri sayım sayacı
   useEffect(() => {
@@ -209,7 +350,7 @@ export default function EventPage(props) {
     }
   }
 
-  if (loadingEvents && !event) {
+  if ((loadingEvents || loadingSingle) && !event) {
     return (
       <div className="stitch-shell page-container" style={{ padding: "5rem 1rem", textAlign: "center" }}>
         <div className="stitch-container">
@@ -355,6 +496,9 @@ export default function EventPage(props) {
     const ok = await onMarkAttendance(event.id, ticket.participant);
     if (ok) {
       markNonceUsed(ticket.nonce);
+      if (account && ticket.participant && ticket.participant.toLowerCase() === account.toLowerCase()) {
+        setUserEventStatus({ isRegistered: true, isAttended: true });
+      }
       await handleVerifyQr(qrInputRaw);
     }
   }
@@ -407,7 +551,18 @@ export default function EventPage(props) {
 
     const ok = await onMarkAttendance(event.id, cleaned);
     if (ok) {
+      if (account && cleaned.toLowerCase() === account.toLowerCase()) {
+        setUserEventStatus({ isRegistered: true, isAttended: true });
+      }
       await handleCheckParticipant(cleaned);
+    }
+  }
+
+  async function handleRegisterClick() {
+    if (!onRegisterEvent || !event) return;
+    const ok = await onRegisterEvent(event.id);
+    if (ok) {
+      setUserEventStatus({ isRegistered: true, isAttended: false });
     }
   }
 
@@ -923,7 +1078,7 @@ export default function EventPage(props) {
               </section>
 
               {/* ÖĞRENCİ İMZALI QR KATILIM ALANI (Kayıtlı ve Katılımı Doğrulanmamışsa) */}
-              {account && event.isRegistered && !event.isAttended && (
+              {account && isRegistered && !isAttended && (
                 <section
                   className="stitch-card"
                   style={{
@@ -1061,6 +1216,18 @@ export default function EventPage(props) {
                     <p className="font-body-sm text-on-surface-variant">
                       Etkinliğe kayıt olmak veya biletinizi görüntülemek için cüzdanınızı bağlayın.
                     </p>
+                    <button
+                      type="button"
+                      className="stitch-btn-primary"
+                      onClick={onConnectWallet}
+                      disabled={isConnecting}
+                      style={{ width: "100%", marginTop: "0.5rem" }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                        account_balance_wallet
+                      </span>
+                      <span>{isConnecting ? "Cüzdan Bağlanıyor..." : "Cüzdan Bağla"}</span>
+                    </button>
                   </div>
                 ) : (
                   <div style={{ marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -1071,7 +1238,7 @@ export default function EventPage(props) {
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
                       <span className="text-outline">Kayıt:</span>
                       <span>
-                        {event.isRegistered ? (
+                        {isRegistered ? (
                           <span className="stitch-badge stitch-badge-open">Kayıtlısınız ✓</span>
                         ) : (
                           <span className="text-outline">Kayıtlı Değil</span>
@@ -1081,7 +1248,7 @@ export default function EventPage(props) {
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
                       <span className="text-outline">Katılım:</span>
                       <span>
-                        {event.isAttended ? (
+                        {isAttended ? (
                           <span className="stitch-badge stitch-badge-completed">Doğrulandı ✓</span>
                         ) : (
                           <span className="text-outline">Bekleniyor</span>
@@ -1093,11 +1260,11 @@ export default function EventPage(props) {
 
                 {/* Kayıt Aksiyon Butonu */}
                 <div>
-                  {event.isAttended ? (
+                  {isAttended ? (
                     <div className="stitch-card-low" style={{ padding: "0.75rem 1rem", textAlign: "center", color: "#6ee7b7" }}>
                       ✓ Katılımınız Blokzincirde Doğrulanmıştır!
                     </div>
-                  ) : event.isRegistered ? (
+                  ) : isRegistered ? (
                     <div className="stitch-card-low" style={{ padding: "0.75rem 1rem", textAlign: "center", color: "var(--stitch-primary)" }}>
                       ✓ Bu etkinliğe kaydınız tamamlandı.
                     </div>
@@ -1117,7 +1284,7 @@ export default function EventPage(props) {
                     <button
                       type="button"
                       className="stitch-btn-primary"
-                      onClick={() => onRegisterEvent(event.id)}
+                      onClick={handleRegisterClick}
                       disabled={txState.busy || !account}
                       style={{ width: "100%", padding: "0.875rem" }}
                     >

@@ -330,6 +330,9 @@ export function createApp({ maxBodySizeBytes = 900 * 1024 } = {}) {
       get(headerName) {
         return normalizedHeaders[String(headerName).toLowerCase()];
       },
+      on(event, handler) {
+        return req;
+      },
     };
 
     const resHeaders = {};
@@ -358,6 +361,21 @@ export function createApp({ maxBodySizeBytes = 900 * 1024 } = {}) {
       },
       getHeader(name) {
         return resHeaders[String(name).toLowerCase()];
+      },
+      writeHead(code, headers = {}) {
+        statusCode = Number(code);
+        for (const [k, v] of Object.entries(headers)) {
+          resHeaders[String(k).toLowerCase()] = v;
+        }
+        return res;
+      },
+      flushHeaders() {
+        return res;
+      },
+      write(chunk) {
+        if (responseBody === null) responseBody = "";
+        responseBody += String(chunk);
+        return true;
       },
       cookie(name, value, options = {}) {
         const cookieStr = serializeCookie(name, value, options);
@@ -403,6 +421,11 @@ export function createApp({ maxBodySizeBytes = 900 * 1024 } = {}) {
       headers: resHeaders,
       cookies: setCookies,
       body: responseBody,
+      rawPayload: Buffer.from(
+        typeof responseBody === "string"
+          ? responseBody
+          : JSON.stringify(responseBody || {})
+      ),
     };
   }
 

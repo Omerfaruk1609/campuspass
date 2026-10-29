@@ -57,7 +57,7 @@ function validateEmail(email) {
   return trimmed;
 }
 
-export function createCommunityService({ prisma }) {
+export function createCommunityService({ prisma, notificationService = null }) {
   if (!prisma) {
     throw new Error("createCommunityService: prisma dependency is required.");
   }
@@ -65,6 +65,50 @@ export function createCommunityService({ prisma }) {
   /**
    * Topluluğu ID veya slug üzerinden bulur.
    */
+
+  async function notifyCommunityAdmins(community, { type, title, message, metadata = {} }) {
+    if (!notificationService) return;
+    try {
+      const admins = await prisma.communityMember.findMany({
+        where: {
+          communityId: community.id,
+          role: { in: [COMMUNITY_ROLES.OWNER, COMMUNITY_ROLES.ADMIN] },
+          status: MEMBERSHIP_STATUS.ACTIVE,
+        },
+        select: { walletAddress: true },
+      });
+      const recipients = admins.map((a) => a.walletAddress);
+      if (recipients.length > 0) {
+        await notificationService.createNotificationsForRecipients({
+          recipients,
+          type,
+          title,
+          message,
+          destinationUrl: `/communities/${community.slug}/manage`,
+          metadata: { communityId: community.id, communitySlug: community.slug, ...metadata },
+        });
+      }
+    } catch {
+      // Bildirim hatalari ana akisi engellemez
+    }
+  }
+
+  async function notifyMember(recipientWallet, { type, title, message, destinationUrl, metadata = {} }) {
+    if (!notificationService) return;
+    try {
+      await notificationService.createNotification({
+        recipientWallet,
+        type,
+        title,
+        message,
+        destinationUrl,
+        metadata,
+      });
+    } catch {
+      // Bildirim hatalari ana akisi engellemez
+    }
+  }
+
   async function findCommunityByIdOrSlug(idOrSlug) {
     if (!idOrSlug || typeof idOrSlug !== "string") return null;
     const clean = idOrSlug.trim();
@@ -158,6 +202,105 @@ export function createCommunityService({ prisma }) {
         owner: member,
       };
     });
+  }
+
+  /**
+   * Topluluk Duyurusu Oluşturma
+   */
+  async function createAnnouncement(idOrSlug, callerWallet, { title, content }) {
+    const community = await findCommunityByIdOrSlug(idOrSlug);
+    if (!community) {
+      throw ApiError.notFound("Topluluk bulunamadı.", "COMMUNITY_NOT_FOUND");
+    }
+    await requireRole(community.id, callerWallet, [COMMUNITY_ROLES.OWNER, COMMUNITY_ROLES.ADMIN]);
+
+    const cleanTitle = sanitizeString(title, 120);
+    const cleanContent = sanitizeString(content, 2000);
+
+    const announcement = await prisma.announcement.create({
+      data: {
+        targetType: "COMMUNITY",
+        communityId: community.id,
+        authorWallet: callerWallet.toLowerCase(),
+        title: cleanTitle,
+        content: cleanContent,
+        recipientCount: 0,
+      },
+    });
+
+    const activeMembers = await prisma.communityMember.findMany({
+      where: {
+        communityId: community.id,
+        status: MEMBERSHIP_STATUS.ACTIVE,
+      },
+      select: { walletAddress: true },
+    });
+
+    const recipients = activeMembers.map((m) => m.walletAddress);
+    if (recipients.length > 0 && notificationService) {
+      try {
+        await notificationService.createNotificationsForRecipients({
+          recipients,
+          type: "COMMUNITY_ANNOUNCEMENT",
+          title: `Duyuru: ${cleanTitle}`,
+          message: `${community.name}: ${cleanContent}`.slice(0, 160),
+          destinationUrl: `/communities/${community.slug}`,
+          metadata: {
+            communityId: community.id,
+            communitySlug: community.slug,
+            announcementId: announcement.id,
+          },
+        });
+      } catch {
+        // bildirim hatası ana kaydı engellemez
+      }
+    }
+
+    const updated = await prisma.announcement.update({
+      where: { id: announcement.id },
+      data: { recipientCount: recipients.length },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Topluluk Duyurularını Listeleme
+   */
+  async function getAnnouncements(idOrSlug, { page = 1, limit = 20 } = {}) {
+    const community = await findCommunityByIdOrSlug(idOrSlug);
+    if (!community) {
+      throw ApiError.notFound("Topluluk bulunamadı.", "COMMUNITY_NOT_FOUND");
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const take = Math.min(50, Math.max(1, Number(limit) || 20));
+    const skip = (pageNum - 1) * take;
+
+    const where = {
+      targetType: "COMMUNITY",
+      communityId: community.id,
+    };
+
+    const [total, items] = await Promise.all([
+      prisma.announcement.count({ where }),
+      prisma.announcement.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page: pageNum,
+        limit: take,
+        total,
+        totalPages: Math.ceil(total / take),
+      },
+    };
   }
 
   /**
@@ -566,6 +709,25 @@ export function createCommunityService({ prisma }) {
       },
     });
 
+    if (notificationService) {
+      try {
+        await notificationService.createNotification({
+          recipientWallet: target.walletAddress,
+          type: "COMMUNITY_MEMBERSHIP_APPROVED",
+          title: "Topluluk Üyeliğiniz Onaylandı!",
+          message: `"${community.name}" topluluğuna katılım başvurunuz onaylandı.`,
+          destinationUrl: `/communities/${community.slug}`,
+          metadata: {
+            communityId: community.id,
+            communitySlug: community.slug,
+            membershipId: target.id,
+          },
+        });
+      } catch {
+        // bildirim hatası ana işlemi engellemez
+      }
+    }
+
     return {
       success: true,
       message: "Başvuru onaylandı, üyelik aktifleştirildi.",
@@ -600,6 +762,25 @@ export function createCommunityService({ prisma }) {
         updatedAt: new Date(),
       },
     });
+
+    if (notificationService) {
+      try {
+        await notificationService.createNotification({
+          recipientWallet: target.walletAddress,
+          type: "COMMUNITY_MEMBERSHIP_REJECTED",
+          title: "Topluluk Başvurusu Sonucu",
+          message: `"${community.name}" topluluğuna yaptığınız başvuru onaylanmadı.`,
+          destinationUrl: `/communities/${community.slug}`,
+          metadata: {
+            communityId: community.id,
+            communitySlug: community.slug,
+            membershipId: target.id,
+          },
+        });
+      } catch {
+        // bildirim hatası ana işlemi engellemez
+      }
+    }
 
     return {
       success: true,
@@ -703,6 +884,25 @@ export function createCommunityService({ prisma }) {
         updatedAt: new Date(),
       },
     });
+
+    if (notificationService) {
+      try {
+        await notificationService.createNotification({
+          recipientWallet: target.walletAddress,
+          type: "COMMUNITY_ROLE_CHANGED",
+          title: "Topluluk Rolünüz Güncellendi",
+          message: `"${community.name}" topluluğundaki rolünüz "${newRole}" olarak güncellendi.`,
+          destinationUrl: `/communities/${community.slug}`,
+          metadata: {
+            communityId: community.id,
+            communitySlug: community.slug,
+            role: newRole,
+          },
+        });
+      } catch {
+        // bildirim hatası ana işlemi engellemez
+      }
+    }
 
     return {
       success: true,
@@ -1074,5 +1274,7 @@ export function createCommunityService({ prisma }) {
     unlinkEventFromCommunity,
     getCommunityAnalytics,
     getUserCommunities,
+    createAnnouncement,
+    getAnnouncements,
   };
 }

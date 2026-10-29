@@ -25,7 +25,8 @@
 * **Yönlendirme (Routing):** React Router DOM v7 (Bildirimsel Rota Ağacı, Route Guards, Deep Linking, 404 Sayfası)
 * **Öğrenci Profili & Hesap Ayarları (Faz 14):** Kişisel isim, üniversite, bölüm, biyografi, avatar ve gizlilik (`isPublic`) tercihlerini yöneten `/settings` rotası ve SIWE korumalı REST API uç noktaları
 * **Backend API:** Node.js + Express Uyumlu HTTP Katmanı + Zod Giriş Validasyonu
-* **Veritabanı & ORM:** PostgreSQL 16 + Prisma ORM 6 (`server/prisma/schema.prisma` — 10 doğrulanmış veri modeli)
+* **Veritabanı & ORM:** PostgreSQL 16 + Prisma ORM 6 (`server/prisma/schema.prisma` — 13 doğrulanmış veri modeli)
+* **Bildirim Merkezi & Canlı İletişim (Faz 15):** Server-Sent Events (SSE) tabanlı gerçek zamanlı bildirim akışı (`GET /api/notifications/stream`), kalıcı bildirim merkezi (`/notifications`), okunmamış rozet sayacı, kategori bazlı bildirim tercihleri (`/settings`), topluluk ve etkinlik duyuruları broadcast altyapısı
 * **Kimlik Doğrulama:** EIP-4361 (SIWE) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token` + Sekmeler Arası Eşitleme (`campuspass_auth_event`)
 * **Blokzincir Entegrasyonu:** Ethers.js v6 + Salt-Okunur RPC ve İmzacı Sağlayıcı
 * **Event Indexer:** Blokzincir olaylarını (`EventCreated`, `UserRegistered`, `AttendanceMarked`) aralıksız tarayan ve reorg korumalı checkpoint tablosunda saklayan indeksleyici servis
@@ -50,19 +51,19 @@ campuspass/
 │   └── data/                   # Monad Testnet ABI, sabitler ve deployment bilgisi
 ├── server/                     # Backend API, Prisma & Event Indexer
 │   ├── prisma/
-│   │   ├── schema.prisma       # 10 doğrulanmış PostgreSQL veri modeli (StudentProfile dahil)
-│   │   └── migrations/         # SQL migration geçmişi (Faz 14 dahil)
+│   │   ├── schema.prisma       # 13 doğrulanmış PostgreSQL veri modeli (Notification modelleri dahil)
+│   │   └── migrations/         # SQL migration geçmişi (Faz 15 dahil)
 │   ├── src/
 │   │   ├── app.js              # Bağımlılık enjeksiyonlu API fabrika fonksiyonu
 │   │   ├── index.js            # Sunucu giriş noktası
-│   │   ├── routes/             # health, auth, events, students, certificates, organizer, communities
+│   │   ├── routes/             # health, auth, events, students, certificates, organizer, communities, notifications
 │   │   ├── controllers/        # İstek denetleyicileri
-│   │   ├── services/           # authService, blockchainService, certificateService, communityService, eventService, studentService
+│   │   ├── services/           # authService, blockchainService, certificateService, communityService, eventService, studentService, notificationService
 │   │   ├── middleware/         # authMiddleware (require & optional), security, rateLimiter, errorHandler
 │   │   └── indexer/            # eventIndexer.js ve runIndexer.js
-│   ├── tests/                  # PostgreSQL entegrasyon testleri (7 test)
+│   ├── tests/                  # PostgreSQL entegrasyon testleri (8 test)
 │   └── .env.example
-├── test/                       # 134 Mocha/Chai regresyon testi
+├── test/                       # 156 Mocha/Chai regresyon testi
 └── README.md
 ```
 
@@ -82,7 +83,8 @@ Tüm rotalar `src/routes/AppRoutes.jsx` dosyasında bildirimsel olarak tanımlan
 | `/communities/:slug/manage` | `CommunityManagePage` | `CommunityManageGuard` (`OWNER`/`ADMIN`) | Topluluk yönetim paneli (Roller, başvurular, etkinlik bağlama) |
 | `/profile` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci profili, kayıtlı etkinlikler, rozetler ve geçmiş |
 | `/profile/certificates` | `StudentProfile` | `ProtectedRoute` (Cüzdan Zorunlu) | Kazanılan blokzincir dijital katılım sertifikaları |
-| `/settings` | `AccountSettingsPage` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci profili düzenleme, gizlilik ve SIWE oturum ayarları |
+| `/notifications` | `NotificationsPage` | `ProtectedRoute` (Cüzdan Zorunlu) | Bildirim merkezi (Tümü / Okunmamış, anlık SSE akışı, okundu yönetimi) |
+| `/settings` | `AccountSettingsPage` | `ProtectedRoute` (Cüzdan Zorunlu) | Öğrenci profili düzenleme, bildirim tercihleri ve SIWE oturum ayarları |
 | `/organizer` | `OrganizerDashboardPage` | `OrganizerGuard` (Cüzdan Zorunlu) | Organizatör panosu, QR okutma ve katılım işaretleme |
 | `/organizer/events/:eventId` | `OrganizerEventAnalyticsPage` | `OrganizerGuard` (Sahiplik Zorunlu) | Belirli bir etkinliğe ait katılım hunisi ve zaman serisi |
 | `/verify` | `CertificateVerificationPage` | Herkese Açık | Sertifika doğrulama arama ekranı |
@@ -172,13 +174,13 @@ Uygulamayı tarayıcınızda `http://localhost:5173` adresinden açabilirsiniz.
 ## 7. Test ve Doğrulama Komutları
 
 ```bash
-# Tüm Mocha ve Solidity testlerini çalıştır (134 test)
+# Tüm Mocha ve Solidity testlerini çalıştır (156 test)
 npm test
 
-# Gerçek PostgreSQL entegrasyon testlerini çalıştır (7 test)
+# Gerçek PostgreSQL entegrasyon testlerini çalıştır (8 test)
 npm run test:postgres
 
-# Prisma veri şeması bütünlük kontrolü (10 model)
+# Prisma veri şeması bütünlük kontrolü (13 model)
 npm run db:validate
 
 # Oxlint statik kod analizi (0 hata)
