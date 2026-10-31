@@ -138,5 +138,50 @@ export function createEventController({ eventService }) {
         pagination: result.pagination,
       });
     },
+
+    async verifyAttendance(req, res) {
+      const { eventId } = parseWithZod(eventIdParamSchema, req.params);
+      const body = req.body || {};
+
+      const result = await eventService.verifyQrAndAttendance(
+        eventId,
+        req.session.walletAddress,
+        {
+          rawQrString: body.rawQrString ?? body.qrPayload ?? null,
+          participantAddress: body.participantAddress ?? body.walletAddress ?? null,
+          txHash: body.txHash ?? null,
+          consumeNonce: body.consumeNonce !== false,
+          nowSecondsOverride:
+            typeof body.nowSecondsOverride === "number"
+              ? body.nowSecondsOverride
+              : null,
+        }
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    },
+
+    async syncRegistration(req, res) {
+      const { eventId } = parseWithZod(eventIdParamSchema, req.params);
+      const body = req.body || {};
+      const walletAddress =
+        req.session?.walletAddress || body.walletAddress || body.participantAddress;
+
+      const result = await eventService.syncStudentRegistrationFromChain(
+        eventId,
+        walletAddress,
+        {
+          txHash: body.txHash || null,
+        }
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    },
   };
 }

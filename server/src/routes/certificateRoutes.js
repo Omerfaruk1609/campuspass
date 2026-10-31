@@ -16,8 +16,11 @@ export function createCertificateRoutes({
     ? [certificateVerifyRateLimiter]
     : [];
 
-  // Giriş yapmış öğrencinin sertifika oluşturma ve listeleme endpoint'leri (SIWE Oturumu zorunlu)
+  // Giriş yapmış öğrencinin veya yetkili organizatörün sertifika oluşturma ve listeleme endpoint'leri (SIWE Oturumu zorunlu)
   router.post("/", ...writeMw, (req, res) =>
+    certificateController.issueCertificate(req, res)
+  );
+  router.post("/issue", ...writeMw, (req, res) =>
     certificateController.issueCertificate(req, res)
   );
   router.get("/me", requireOrganizerSession, (req, res) =>
@@ -30,6 +33,9 @@ export function createCertificateRoutes({
   );
 
   // Herkese açık sertifika doğrulama ve detay endpoint'leri (Cüzdan bağlantısı gerektirmez)
+  router.get("/verify/:certificateId", ...verifyMw, (req, res) =>
+    certificateController.verifyCertificate(req, res)
+  );
   router.get("/:certificateId/verify", ...verifyMw, (req, res) =>
     certificateController.verifyCertificate(req, res)
   );

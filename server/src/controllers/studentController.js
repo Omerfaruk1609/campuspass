@@ -48,6 +48,8 @@ export function createStudentController({ studentService }) {
           registeredEvents: profile.registeredEvents,
           upcomingEvents: profile.upcomingEvents,
           pastEvents: profile.pastEvents,
+          attendedEvents: profile.attendedEvents,
+          timeline: profile.timeline,
           stats: profile.stats,
         },
       });

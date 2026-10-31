@@ -8,6 +8,13 @@ export class ApiError extends Error {
   }
 
   static badRequest(message, details = null, code = "VALIDATION_ERROR") {
+    if (
+      typeof details === "string" &&
+      /^[A-Z0-9_]+$/.test(details) &&
+      code === "VALIDATION_ERROR"
+    ) {
+      return new ApiError(400, details, message, null);
+    }
     return new ApiError(400, code, message, details);
   }
 

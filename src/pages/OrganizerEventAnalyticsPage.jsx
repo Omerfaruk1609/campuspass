@@ -13,6 +13,7 @@ import {
   fetchOrganizerEventAnalyticsFromBackend,
   fetchOrganizerEventParticipantsFromBackend,
   getActiveAuthState,
+  issueCertificateOnBackend,
 } from "../utils/apiClient";
 import { formatTurkeyDateOnly, formatTurkeyDateTime } from "../utils/eventMetadata";
 
@@ -24,6 +25,7 @@ export default function OrganizerEventAnalyticsPage(props) {
   const account = props.account ?? context?.account ?? null;
   const eventId = props.eventId ?? (params.eventId ? Number(params.eventId) : null);
   const handleBack = props.onBack || (() => (navigate ? navigate("/organizer") : null));
+  const onBack = handleBack;
   const handleOpenEvent = props.onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -181,6 +183,48 @@ export default function OrganizerEventAnalyticsPage(props) {
       await navigator.clipboard.writeText(addr);
       setCopiedAddress(addr);
       setTimeout(() => setCopiedAddress(null), 2000);
+    }
+  }
+
+  const [issuingCertForWallet, setIssuingCertForWallet] = useState(null);
+  const [certActionBanner, setCertActionBanner] = useState(null);
+
+  async function handleIssueCertificateForParticipant(participantAddress) {
+    if (!eventId || !participantAddress) return;
+    setIssuingCertForWallet(participantAddress);
+    setCertActionBanner(null);
+    try {
+      const isAuthed = await ensureSiwe();
+      if (!isAuthed) {
+        setCertActionBanner({
+          type: "error",
+          text: "Sertifika oluşturmak için SIWE organizatör oturumu gereklidir.",
+        });
+        return;
+      }
+
+      const res = await issueCertificateOnBackend({
+        eventId: Number(eventId),
+        walletAddress: participantAddress,
+      });
+
+      const certId = res?.data?.certificateId || "";
+      setCertActionBanner({
+        type: "success",
+        text: res?.idempotent
+          ? `${shortenAddress(participantAddress)} için mevcut sertifika doğrulandı (${certId}).`
+          : `${shortenAddress(participantAddress)} için dijital katılım sertifikası başarıyla verildi (${certId}).`,
+      });
+
+      await loadEventAnalytics();
+      await loadParticipants(pagination.page);
+    } catch (err) {
+      setCertActionBanner({
+        type: "error",
+        text: err.message || "Sertifika oluşturulurken hata oluştu.",
+      });
+    } finally {
+      setIssuingCertForWallet(null);
     }
   }
 
@@ -447,6 +491,15 @@ export default function OrganizerEventAnalyticsPage(props) {
           </div>
         </div>
 
+        {certActionBanner && (
+          <div
+            className={`inline-alert ${certActionBanner.type === "error" ? "error" : "success"}`}
+            style={{ marginTop: "0.85rem" }}
+          >
+            {certActionBanner.text}
+          </div>
+        )}
+
         {/* Katılımcı Tablosu */}
         {loadingParticipants ? (
           <div className="empty-state">
@@ -544,8 +597,21 @@ export default function OrganizerEventAnalyticsPage(props) {
                             {p.certificateId ? p.certificateId.slice(-8) : ""}
                           </span>
                         </div>
+                      ) : p.isAttended ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={issuingCertForWallet === p.walletAddress}
+                          onClick={() => handleIssueCertificateForParticipant(p.walletAddress)}
+                        >
+                          {issuingCertForWallet === p.walletAddress
+                            ? "Veriliyor..."
+                            : "🎓 Sertifika Ver"}
+                        </button>
                       ) : (
-                        <span className="status-badge inactive">—</span>
+                        <span className="status-badge inactive" title="Önce katılım doğrulanmalıdır">
+                          Katılım Bekleniyor
+                        </span>
                       )}
                     </td>
                   </tr>

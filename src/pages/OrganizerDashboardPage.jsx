@@ -46,9 +46,12 @@ export default function OrganizerDashboardPage(props) {
     if (props.onCreateEventClick) {
       props.onCreateEventClick();
     } else if (navigate) {
-      navigate("/events");
+      navigate("/events?create=1");
     }
   };
+
+  const onCreateEventClick = props.onCreateEventClick || handleCreate;
+  const onSelectEvent = props.onSelectEvent || handleSelectEvent;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);

@@ -20,6 +20,7 @@ import {
   ensureStudentSiweSession,
   fetchEventsMetadataFromBackend,
   fetchStudentAccountProfileFromBackend,
+  fetchStudentEventsFromBackend,
   fetchMyCertificatesFromBackend,
   fetchMyCommunitiesFromBackend,
   fetchWalletCertificatesFromBackend,
@@ -33,7 +34,9 @@ import {
 } from "../utils/certificatePdf";
 import {
   ATTENDANCE_STATE,
+  buildStudentTimeline,
   calculateStudentStats,
+  classifyStudentAttendanceState,
   fetchStudentProfileData,
 } from "../utils/studentProfile";
 import { generateQrMatrix } from "../utils/qrMatrix";
@@ -235,13 +238,19 @@ export default function StudentProfile(props) {
     [account, loadMyCommunities]
   );
 
+  const contextEvents = context?.events;
+  const contextAccount = context?.account;
+
   const fetchAndSetProfile = useCallback(
     async (targetAccount) => {
-      if (!targetAccount) {
+      if (!targetAccount || !ethers.isAddress(targetAccount)) {
         setProfile(EMPTY_PROFILE);
         setCertificates([]);
+        setLoading(false);
         return;
       }
+
+      const normalizedTarget = ethers.getAddress(targetAccount);
 
       try {
         try {
@@ -254,22 +263,140 @@ export default function StudentProfile(props) {
         }
 
         const contract = getReadOnlyContract();
-        const [data, certList] = await Promise.all([
+        const [onChainDataResult, backendStudentResult, certList] = await Promise.all([
           fetchStudentProfileData({
-            walletAddress: targetAccount,
+            walletAddress: normalizedTarget,
             contract,
             chainId: MONAD_CHAIN_ID,
             contractAddress: CONTRACT_ADDRESS,
-          }),
-          loadCertificatesForAccount(targetAccount),
+          }).catch((err) => ({ __error: err })),
+          fetchStudentEventsFromBackend(normalizedTarget).catch(() => null),
+          loadCertificatesForAccount(normalizedTarget),
           loadMyCommunities(),
         ]);
+
+        const onChainFailed = Boolean(onChainDataResult && onChainDataResult.__error);
+        const onChainProfile = onChainFailed ? null : onChainDataResult;
+
+        // Kayıtlı etkinlikleri cüzdan izolasyonunu koruyarak birleştir
+        const mergedByEventId = new Map();
+
+        if (Array.isArray(backendStudentResult?.registeredEvents)) {
+          for (const ev of backendStudentResult.registeredEvents) {
+            if (ev && ev.id && ev.isRegistered !== false) {
+              mergedByEventId.set(Number(ev.id), {
+                ...ev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended),
+              });
+            }
+          }
+        }
+
+        if (Array.isArray(onChainProfile?.registeredEvents)) {
+          for (const ev of onChainProfile.registeredEvents) {
+            if (ev && ev.id && ev.isRegistered !== false) {
+              const prev = mergedByEventId.get(Number(ev.id)) || {};
+              mergedByEventId.set(Number(ev.id), {
+                ...prev,
+                ...ev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended || prev.isAttended),
+                registrationTxHash:
+                  ev.registrationTxHash || prev.registrationTxHash || null,
+                attendanceTxHash:
+                  ev.attendanceTxHash || prev.attendanceTxHash || null,
+                hasCertificate: Boolean(ev.hasCertificate || prev.hasCertificate),
+                certificateId: ev.certificateId || prev.certificateId || null,
+              });
+            }
+          }
+        }
+
+        // Eğer aktif bağlamdaki cüzdan aynıysa AppContext içindeki doğrulanmış kayıtları da yedek olarak dahil et
+        if (
+          contextAccount &&
+          contextAccount.toLowerCase() === normalizedTarget.toLowerCase() &&
+          Array.isArray(contextEvents)
+        ) {
+          for (const ev of contextEvents) {
+            if (ev && ev.id && ev.isRegistered === true) {
+              const prev = mergedByEventId.get(Number(ev.id)) || {};
+              mergedByEventId.set(Number(ev.id), {
+                ...ev,
+                ...prev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended || prev.isAttended),
+              });
+            }
+          }
+        }
+
+        if (
+          onChainFailed &&
+          !backendStudentResult &&
+          mergedByEventId.size === 0
+        ) {
+          throw onChainDataResult.__error;
+        }
+
+        const certMap = new Map(
+          (Array.isArray(certList) ? certList : []).map((c) => [
+            Number(c.eventId),
+            c,
+          ])
+        );
+
+        const combinedRegistered = Array.from(mergedByEventId.values()).map(
+          (ev) => {
+            const cert = certMap.get(Number(ev.id)) || null;
+            const enriched = {
+              ...ev,
+              isRegistered: true,
+              isAttended: Boolean(ev.isAttended),
+              hasCertificate: Boolean(
+                ev.hasCertificate || (cert && cert.status === "ACTIVE")
+              ),
+              certificateId: cert?.certificateId || ev.certificateId || null,
+            };
+            enriched.attendanceState = classifyStudentAttendanceState(enriched);
+            return enriched;
+          }
+        );
+
+        combinedRegistered.sort(
+          (a, b) => (Date.parse(b.startAt) || 0) - (Date.parse(a.startAt) || 0)
+        );
+
+        const upcomingEvents = combinedRegistered.filter(
+          (ev) => ev.status === "upcoming" || ev.status === "ongoing"
+        );
+        const pastEvents = combinedRegistered.filter(
+          (ev) => ev.status === "completed" || ev.status === "cancelled"
+        );
+        const attendedEvents = combinedRegistered.filter(
+          (ev) => ev.isAttended === true
+        );
+
+        const finalProfile = {
+          walletAddress: normalizedTarget,
+          registeredEvents: combinedRegistered,
+          upcomingEvents,
+          pastEvents,
+          attendedEvents,
+          stats: calculateStudentStats(combinedRegistered),
+          timeline: buildStudentTimeline(combinedRegistered, {
+            direction: "DESC",
+          }),
+          error: null,
+        };
+
         let profileDetails = null;
         try {
-          profileDetails = await fetchStudentAccountProfileFromBackend(targetAccount);
+          profileDetails = await fetchStudentAccountProfileFromBackend(normalizedTarget);
         } catch {}
         setUserProfile(profileDetails);
-        setProfile(data);
+        setProfile(finalProfile);
         if (Array.isArray(certList)) {
           setCertificates(certList);
         }
@@ -284,7 +411,7 @@ export default function StudentProfile(props) {
         setLoading(false);
       }
     },
-    [loadCertificatesForAccount, loadMyCommunities]
+    [loadCertificatesForAccount, loadMyCommunities, contextAccount, contextEvents]
   );
 
   async function handleManualRefresh() {
@@ -850,6 +977,7 @@ export default function StudentProfile(props) {
                           (existingCert.status === "ACTIVE" || !existingCert.status)
                             ? existingCert
                             : null;
+                        const hasCertBadge = Boolean(activeCert || ev.hasCertificate);
 
                         return (
                           <article
@@ -867,11 +995,20 @@ export default function StudentProfile(props) {
                                 <span className="font-label-mono text-outline">#{ev.id}</span>
                                 <span className="font-label-badge text-primary">{ev.community}</span>
                               </div>
-                              <div style={{ display: "flex", gap: "0.35rem" }}>
+                              <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                                 <span className="stitch-badge stitch-badge-open">Kayıtlı ✓</span>
                                 <span className={`stitch-badge ${isVerifiedAttended ? "stitch-badge-completed" : "stitch-badge-testnet"}`}>
                                   {attState?.label || "Bekleniyor"}
                                 </span>
+                                {hasCertBadge ? (
+                                  <span className="stitch-badge stitch-badge-verified">
+                                    🎓 Sertifika Verildi
+                                  </span>
+                                ) : isVerifiedAttended ? (
+                                  <span className="stitch-badge stitch-badge-testnet">
+                                    🎓 Sertifika Alınabilir
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
 

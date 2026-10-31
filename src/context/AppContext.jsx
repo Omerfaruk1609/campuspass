@@ -37,6 +37,8 @@ import {
   readPendingSyncQueue,
   removePendingMetadataSync,
   saveMetadataToBackend,
+  syncStudentRegistrationOnBackend,
+  verifyAttendanceOnBackend,
 } from "../utils/apiClient";
 
 const AppContext = createContext(null);
@@ -1058,6 +1060,10 @@ export function AppProvider({
       });
 
       const receipt = await tx.wait();
+      syncStudentRegistrationOnBackend(eventId, {
+        walletAddress: account,
+        txHash: receipt?.hash || tx.hash,
+      }).catch(() => {});
       await loadEvents(account);
 
       setBanner({
@@ -1078,7 +1084,20 @@ export function AppProvider({
   }
 
   // Organizatör Katılım İşaretleme
-  async function handleMarkAttendance(eventId, participantAddress) {
+  async function handleMarkAttendance(eventId, participantAddress, options = {}) {
+    if (
+      account &&
+      participantAddress &&
+      participantAddress.toLowerCase() === account.toLowerCase()
+    ) {
+      setBanner({
+        type: "error",
+        message:
+          "Güvenlik Kuralı: Bir kullanıcı veya organizatör kendi katılımını doğrulayamaz.",
+      });
+      return false;
+    }
+
     setBanner({
       type: "info",
       message: "Katılım doğrulama işlemi için cüzdanınızdan onay bekleniyor...",
@@ -1099,6 +1118,12 @@ export function AppProvider({
       });
 
       const receipt = await tx.wait();
+      verifyAttendanceOnBackend(eventId, {
+        participantAddress,
+        rawQrString: options?.rawQrString || null,
+        txHash: receipt?.hash || tx.hash,
+        consumeNonce: true,
+      }).catch(() => {});
       await loadEvents(account);
 
       setBanner({

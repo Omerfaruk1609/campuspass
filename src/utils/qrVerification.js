@@ -371,18 +371,28 @@ export async function verifySignedQrTicket({
   ]);
 
   const eventExists = Number(onChainEvent.id) !== 0 && Boolean(onChainEvent.active);
+  const isSelfScan =
+    Boolean(connectedAccount) &&
+    ticket.participant.toLowerCase() === connectedAccount.toLowerCase();
+  const isParticipantEventOrganizer =
+    onChainEvent.organizer &&
+    ticket.participant.toLowerCase() === onChainEvent.organizer.toLowerCase();
   const isOrganizerAuthorized =
     Boolean(connectedAccount) &&
-    onChainEvent.organizer.toLowerCase() === connectedAccount.toLowerCase();
+    onChainEvent.organizer.toLowerCase() === connectedAccount.toLowerCase() &&
+    !isSelfScan &&
+    !isParticipantEventOrganizer;
 
   checks.push({
     id: "organizer",
-    label: "Etkinlik Durumu ve Organizatör Yetkisi",
+    label: "Etkinlik Durumu, Organizatör Yetkisi ve Kendi Kendine Doğrulama Koruması",
     passed: eventExists && isOrganizerAuthorized,
     detail: !eventExists
       ? "Etkinlik blokzincirde mevcut değil veya pasif."
+      : isSelfScan || isParticipantEventOrganizer
+      ? "Öğrenciler veya organizatörler kendi QR kodlarını doğrulayamaz ve kendi katılımlarını onaylayamaz (Self-attendance engellendi)."
       : isOrganizerAuthorized
-      ? "Bağlı cüzdan bu etkinliğin yetkili organizatörüdür."
+      ? "Bağlı cüzdan bu etkinliğin yetkili organizatörüdür ve katılımcıdan bağımsızdır."
       : "Yetkisiz cüzdan! Yalnızca etkinliği oluşturan organizatör katılım doğrulayabilir.",
   });
 
@@ -402,7 +412,7 @@ export async function verifySignedQrTicket({
       ? "Bu cüzdan adresi etkinliğe kayıtlı değil (Not registered)."
       : isAlreadyAttended
       ? "Bu öğrencinin katılımı blokzincirde daha önce doğrulanmış (Already attended)."
-      : "Öğrenci etkinliğe kayıtlı ve katılımı henüz işaretlenmemiş.",
+      : "Öğrenci etkinliğe kayıtlı (Registration exists) ve katılımı henüz işaretlenmemiş.",
   });
 
   const allPassed = checks.every((c) => c.passed);
@@ -410,5 +420,7 @@ export async function verifySignedQrTicket({
     valid: allPassed,
     ticket,
     checks,
+    registrationExists: isRegistered,
+    attendanceVerified: isAlreadyAttended,
   };
 }

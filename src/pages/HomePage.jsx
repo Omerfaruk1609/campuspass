@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import EventCard from "../components/EventCard";
 import { MONAD_CHAIN_ID } from "../data/events";
 import {
@@ -9,6 +9,7 @@ import {
   validateEventMetadataInput,
   validatePosterFile,
 } from "../utils/eventMetadata";
+import { fetchManageableCommunitiesFromBackend } from "../utils/apiClient";
 
 function getDefaultDates() {
   const tomorrow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -41,15 +42,40 @@ export default function HomePage(props) {
   const onCreateEvent = props.onCreateEvent ?? context?.handleCreateEvent;
   const onRegisterEvent = props.onRegisterEvent ?? context?.handleRegisterEvent;
   const onRefreshEvents = props.onRefreshEvents ?? context?.loadEvents;
+  const onSiweLogin = props.onSiweLogin ?? context?.handleSiweLogin;
+  const sessionState = props.sessionState ?? context?.sessionState ?? { authenticated: false, walletAddress: null };
   const txState = props.txState ?? context?.txState ?? { busy: false, type: null, targetId: null };
   const viewMode = props.viewMode;
   const defaults = useMemo(() => getDefaultDates(), []);
 
+  const isCreateRequested = useMemo(() => {
+    const search = new URLSearchParams(location.search || "");
+    return (
+      search.get("create") === "1" ||
+      search.get("create") === "true" ||
+      Boolean(props.defaultShowCreateForm)
+    );
+  }, [location.search, props.defaultShowCreateForm]);
+
   // Gelişmiş Etkinlik Oluşturma Formu State
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(isCreateRequested);
   const [title, setTitle] = useState("");
   const [capacity, setCapacity] = useState("50");
-  const [community, setCommunity] = useState("");
+  const [manageableCommunities, setManageableCommunities] = useState(
+    props.manageableCommunities ?? []
+  );
+  const [loadingCommunities, setLoadingCommunities] = useState(
+    props.loadingCommunities ?? false
+  );
+  const [communitiesError, setCommunitiesError] = useState(
+    props.communitiesError ?? ""
+  );
+  const [selectedCommunityId, setSelectedCommunityId] = useState(
+    props.manageableCommunities?.[0]?.communityId || ""
+  );
+  const [_community, setCommunity] = useState(
+    props.manageableCommunities?.[0]?.name || ""
+  );
   const [category, setCategory] = useState("Blockchain");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(defaults.date);
@@ -63,6 +89,81 @@ export default function HomePage(props) {
   const [room, setRoom] = useState("B-204 Konferans Salonu");
   const [posterUrl, setPosterUrl] = useState("");
   const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    if (isCreateRequested) {
+      setShowCreateForm(true);
+    }
+  }, [isCreateRequested]);
+
+  const loadManageableCommunities = useCallback(async () => {
+    if (Array.isArray(props.manageableCommunities)) {
+      setManageableCommunities(props.manageableCommunities);
+      if (props.manageableCommunities.length > 0 && !selectedCommunityId) {
+        setSelectedCommunityId(props.manageableCommunities[0].communityId);
+        setCommunity(props.manageableCommunities[0].name);
+      }
+      return;
+    }
+
+    if (!account) {
+      setManageableCommunities([]);
+      setSelectedCommunityId("");
+      setCommunity("");
+      return;
+    }
+
+    setLoadingCommunities(true);
+    setCommunitiesError("");
+    try {
+      const data = await fetchManageableCommunitiesFromBackend();
+      const rawList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.communities)
+        ? data.communities
+        : Array.isArray(data?.items)
+        ? data.items
+        : [];
+      const list = rawList.map((c) => ({
+        ...c,
+        communityId: c.communityId || c.id,
+      }));
+      setManageableCommunities(list);
+      if (list.length > 0) {
+        setSelectedCommunityId((prev) => {
+          const found = list.find((c) => c.communityId === prev);
+          const next = found || list[0];
+          setCommunity(next.name);
+          return next.communityId;
+        });
+      } else {
+        setSelectedCommunityId("");
+        setCommunity("");
+      }
+    } catch (err) {
+      setManageableCommunities([]);
+      setSelectedCommunityId("");
+      setCommunity("");
+      setCommunitiesError(
+        err.message || "Yetkili topluluklarınız yüklenirken bir hata oluştu."
+      );
+    } finally {
+      setLoadingCommunities(false);
+    }
+  }, [account, props.manageableCommunities, selectedCommunityId]);
+
+  useEffect(() => {
+    if (showCreateForm && account) {
+      loadManageableCommunities();
+    }
+  }, [showCreateForm, account, sessionState?.authenticated, loadManageableCommunities]);
+
+  function handleCommunitySelectChange(e) {
+    const val = e.target.value;
+    setSelectedCommunityId(val);
+    const matched = manageableCommunities.find((c) => c.communityId === val);
+    setCommunity(matched ? matched.name : "");
+  }
 
   // Keşif & Filtreleme State
   const [searchQuery, setSearchQuery] = useState("");
@@ -165,10 +266,21 @@ export default function HomePage(props) {
       return;
     }
 
+    const selectedComm = manageableCommunities.find(
+      (c) => c.communityId === selectedCommunityId
+    );
+    if (!selectedComm) {
+      setFormError(
+        "Etkinlik oluşturmak için yönetici yetkinizin (OWNER veya ADMIN) bulunduğu kayıtlı bir topluluk seçmelisiniz."
+      );
+      return;
+    }
+
     const payload = {
       title,
       capacity: Number(capacity),
-      community,
+      communityId: selectedComm.communityId,
+      community: selectedComm.name,
       category,
       description,
       date,
@@ -194,7 +306,6 @@ export default function HomePage(props) {
     if (createdId) {
       setTitle("");
       setCapacity("50");
-      setCommunity("");
       setDescription("");
       setPosterUrl("");
       setShowCreateForm(false);
@@ -858,16 +969,77 @@ export default function HomePage(props) {
                       <label className="font-label-badge text-on-surface-variant" htmlFor="event-community">
                         Düzenleyen Topluluk / Kulüp *
                       </label>
-                      <input
-                        id="event-community"
-                        type="text"
-                        className="stitch-input"
-                        placeholder="Örn: Blockchain & Web3 Topluluğu"
-                        value={community}
-                        onChange={(e) => setCommunity(e.target.value)}
-                        disabled={txState.busy}
-                        style={{ marginTop: "0.35rem" }}
-                      />
+                      {loadingCommunities ? (
+                        <select
+                          id="event-community"
+                          className="stitch-select"
+                          disabled
+                          value=""
+                          style={{ marginTop: "0.35rem" }}
+                        >
+                          <option value="">Yetkili topluluklarınız yükleniyor...</option>
+                        </select>
+                      ) : manageableCommunities.length > 0 ? (
+                        <select
+                          id="event-community"
+                          className="stitch-select"
+                          value={selectedCommunityId}
+                          onChange={handleCommunitySelectChange}
+                          disabled={txState.busy}
+                          style={{ marginTop: "0.35rem" }}
+                        >
+                          <option value="">-- Düzenleyen Topluluğu Seçin --</option>
+                          {manageableCommunities.map((comm) => (
+                            <option key={comm.communityId || comm.id} value={comm.communityId || comm.id}>
+                              {`${comm.name} (${comm.role === "OWNER" ? "Kurucu" : "Yönetici"})`}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div>
+                          <select
+                            id="event-community"
+                            className="stitch-select"
+                            disabled
+                            value=""
+                            style={{ marginTop: "0.35rem" }}
+                          >
+                            <option value="">
+                              {!account
+                                ? "Önce cüzdanınızı bağlayın"
+                                : communitiesError && communitiesError.includes("SESSION")
+                                ? "SIWE oturumu doğrulaması gerekli"
+                                : "Yönetici yetkiniz olan aktif bir topluluk bulunamadı"}
+                            </option>
+                          </select>
+                          <div style={{ marginTop: "0.45rem", fontSize: "0.75rem", color: "var(--stitch-on-surface-variant)", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                            {account && (!sessionState?.authenticated || (communitiesError && communitiesError.includes("SESSION"))) && onSiweLogin ? (
+                              <button
+                                type="button"
+                                className="stitch-btn-secondary"
+                                onClick={async () => {
+                                  try {
+                                    await onSiweLogin();
+                                    await loadManageableCommunities();
+                                  } catch (err) {
+                                    setCommunitiesError(err.message || "SIWE oturumu açılamadı.");
+                                  }
+                                }}
+                                style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                              >
+                                🔐 SIWE ile Yetkili Toplulukları Yükle
+                              </button>
+                            ) : (
+                              <span>
+                                Etkinlik oluşturmak için kayıtlı bir toplulukta Kurucu (OWNER) veya Yönetici (ADMIN) olmalısınız.{" "}
+                                <Link to="/communities" style={{ color: "var(--stitch-primary)", fontWeight: 600 }}>
+                                  Topluluklar Sayfasına Git →
+                                </Link>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>

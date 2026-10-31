@@ -151,6 +151,7 @@ export function createCertificateService({
   blockchainService,
   signingSecret = env.SESSION_SECRET,
   confirmations = 0,
+  notificationService = null,
 }) {
   const {
     chainId,
@@ -229,27 +230,32 @@ export function createCertificateService({
     }
 
     const {
-      checksumAddress: checksumParticipant,
-      normalizedAddress: normalizedParticipant,
+      checksumAddress: checksumSession,
+      normalizedAddress: normalizedSession,
     } = validateAndNormalizeAddress(sessionWalletAddress, "Oturum cüzdan adresi");
-
-    // Koşul 2: Talep edilen cüzdan oturumdaki cüzdanla birebir aynı olmalı
-    if (requestedWalletAddress) {
-      const { normalizedAddress: normalizedRequested } = validateAndNormalizeAddress(
-        requestedWalletAddress,
-        "Talep edilen cüzdan adresi"
-      );
-      if (normalizedRequested !== normalizedParticipant) {
-        throw ApiError.forbidden(
-          "Yetkisiz işlem: Başka bir cüzdan adresi adına sertifika oluşturulamaz.",
-          "CERTIFICATE_WALLET_MISMATCH"
-        );
-      }
-    }
 
     const numEventId = Number(eventId);
     if (!Number.isSafeInteger(numEventId) || numEventId <= 0) {
       throw ApiError.badRequest("Geçersiz etkinlik kimliği (eventId).");
+    }
+
+    let checksumParticipant = checksumSession;
+    let normalizedParticipant = normalizedSession;
+    const isDelegatedRequest = Boolean(
+      requestedWalletAddress &&
+        validateAndNormalizeAddress(
+          requestedWalletAddress,
+          "Talep edilen cüzdan adresi"
+        ).normalizedAddress !== normalizedSession
+    );
+
+    if (requestedWalletAddress) {
+      const parsedTarget = validateAndNormalizeAddress(
+        requestedWalletAddress,
+        "Talep edilen cüzdan adresi"
+      );
+      checksumParticipant = parsedTarget.checksumAddress;
+      normalizedParticipant = parsedTarget.normalizedAddress;
     }
 
     const cleanDisplayName =
@@ -275,6 +281,44 @@ export function createCertificateService({
           `Etkinlik #${numEventId} blokzincir üzerinde bulunamadı.`,
           "EVENT_NOT_FOUND"
         );
+      }
+
+      // Koşul 2: Talep edilen cüzdan oturumdaki cüzdanla aynı olmalı VEYA çağrıyı yapan
+      // cüzdan bu etkinliğin yetkili organizatörü / topluluk yöneticisi (OWNER/ADMIN) olmalı
+      if (isDelegatedRequest) {
+        let isAuthorizedOrganizer =
+          onChainEvent.organizerNormalized === normalizedSession;
+
+        if (!isAuthorizedOrganizer && prisma.eventMetadata && prisma.communityMember) {
+          const evMeta = await prisma.eventMetadata.findUnique({
+            where: {
+              chainId_contractAddress_eventId: {
+                chainId,
+                contractAddress: contractAddressNormalized,
+                eventId: numEventId,
+              },
+            },
+          });
+          if (evMeta?.communityId) {
+            const commMember = await prisma.communityMember.findFirst({
+              where: {
+                communityId: evMeta.communityId,
+                walletAddress: normalizedSession,
+                status: "ACTIVE",
+              },
+            });
+            if (commMember && ["OWNER", "ADMIN"].includes(commMember.role)) {
+              isAuthorizedOrganizer = true;
+            }
+          }
+        }
+
+        if (!isAuthorizedOrganizer) {
+          throw ApiError.forbidden(
+            "Yetkisiz işlem: Başka bir cüzdan adresi adına sertifika oluşturulamaz.",
+            "CERTIFICATE_WALLET_MISMATCH"
+          );
+        }
       }
 
       // Koşul 4 & 5: Katılım blokzincir üzerinde (attended === true) doğrulanmış olmalı;
@@ -461,6 +505,26 @@ export function createCertificateService({
           idempotent: false,
         };
       });
+
+      if (txResult.created && notificationService) {
+        try {
+          await notificationService.createNotification({
+            recipientWallet: normalizedParticipant,
+            type: "CERTIFICATE_ISSUED",
+            title: "Dijital Katılım Sertifikanız Hazır! 🎓",
+            message: `"${onChainEvent.title}" etkinliği için blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu.`,
+            destinationUrl: `/verify/${txResult.record.certificateId}`,
+            dedupKey: `cert-issued:${chainId}:${numEventId}:${normalizedParticipant}`,
+            metadata: {
+              eventId: numEventId,
+              eventTitle: onChainEvent.title,
+              certificateId: txResult.record.certificateId,
+            },
+          });
+        } catch {
+          // Bildirim hatası sertifika üretimini engellemez
+        }
+      }
 
       return {
         certificate: formatCertificateDto(txResult.record, metadataRow, {

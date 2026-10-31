@@ -1193,7 +1193,7 @@ export function createCommunityService({ prisma, notificationService = null }) {
    */
   async function getUserCommunities(walletAddress) {
     if (!walletAddress || !ethers.isAddress(walletAddress)) {
-      return { joined: [], pending: [], items: [] };
+      return { joined: [], pending: [], manageable: [], items: [] };
     }
 
     const normWallet = walletAddress.toLowerCase();
@@ -1206,7 +1206,7 @@ export function createCommunityService({ prisma, notificationService = null }) {
     });
 
     if (memberships.length === 0) {
-      return { joined: [], pending: [], items: [] };
+      return { joined: [], pending: [], manageable: [], items: [] };
     }
 
     const communityIds = memberships.map((m) => m.communityId);
@@ -1221,6 +1221,7 @@ export function createCommunityService({ prisma, notificationService = null }) {
 
     for (const m of memberships) {
       const comm = commMap.get(m.communityId) || {};
+      const isActiveCommunity = Boolean(comm.id) && (comm.status || "ACTIVE") === "ACTIVE";
       const item = {
         id: m.id,
         membershipId: m.id,
@@ -1242,17 +1243,44 @@ export function createCommunityService({ prisma, notificationService = null }) {
         },
       };
 
-      if (m.status === MEMBERSHIP_STATUS.ACTIVE) {
+      if (m.status === MEMBERSHIP_STATUS.ACTIVE && isActiveCommunity) {
         joined.push(item);
-      } else if (m.status === MEMBERSHIP_STATUS.PENDING) {
+      } else if (m.status === MEMBERSHIP_STATUS.PENDING && isActiveCommunity) {
         pending.push(item);
       }
     }
 
+    const manageable = joined.filter(
+      (item) =>
+        item.role === COMMUNITY_ROLES.OWNER || item.role === COMMUNITY_ROLES.ADMIN
+    );
+
     return {
       joined,
       pending,
+      manageable,
       items: [...joined, ...pending],
+    };
+  }
+
+  /**
+   * Kullanıcının Etkinlik Düzenleme Yetkisine Sahip Olduğu (OWNER / ADMIN) Topluluklar
+   */
+  async function getManageableCommunities(walletAddress) {
+    const userComms = await getUserCommunities(walletAddress);
+    const items = userComms.manageable.map((m) => ({
+      id: m.community.id,
+      communityId: m.community.id,
+      name: m.community.name,
+      slug: m.community.slug,
+      universityName: m.community.universityName,
+      category: m.community.category,
+      role: m.role,
+      membershipStatus: m.status,
+    }));
+    return {
+      items,
+      communities: items,
     };
   }
 
@@ -1274,6 +1302,7 @@ export function createCommunityService({ prisma, notificationService = null }) {
     unlinkEventFromCommunity,
     getCommunityAnalytics,
     getUserCommunities,
+    getManageableCommunities,
     createAnnouncement,
     getAnnouncements,
   };

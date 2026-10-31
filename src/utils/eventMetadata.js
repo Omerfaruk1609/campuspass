@@ -311,10 +311,16 @@ export function validateEventMetadataInput(input, { requireTitleAndCapacity = tr
 
   const posterUrl = validatePosterUrl(input.posterUrl || "");
 
+  const communityId =
+    typeof input.communityId === "string" && input.communityId.trim()
+      ? input.communityId.trim()
+      : null;
+
   return {
     title,
     capacity,
     description,
+    communityId,
     community,
     category,
     date,
@@ -683,6 +689,7 @@ export function mergeOnChainEventWithMetadata(
     compositeKey: buildEventCompositeKey(chainId, contractAddress, onChainEvent.id),
     hasCustomMetadata: Boolean(stored),
     description: meta.description,
+    communityId: meta.communityId || null,
     community: meta.community,
     category: meta.category,
     date: meta.date,
