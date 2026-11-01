@@ -1124,7 +1124,7 @@ export default function StudentProfile(props) {
                                 verified_user
                               </span>
                               <span className="font-body-sm" style={{ color: "var(--stitch-on-surface)" }}>
-                                Doğrulanmış Sertifika Alıcısı: <strong style={{ color: "#34d399" }}>{userProfile.displayName.trim()}</strong>
+                                Profilde Kayıtlı Katılımcı Adı: <strong style={{ color: "#34d399" }}>{userProfile.displayName.trim()}</strong>
                               </span>
                             </div>
                             <button
@@ -1137,7 +1137,7 @@ export default function StudentProfile(props) {
                             </button>
                           </div>
                           <p className="font-body-xs text-on-surface-variant" style={{ margin: "0.35rem 0 0" }}>
-                            Sertifikanız üretildiğinde bu profil adı kayda kalıcı olarak mühürlenir (snapshot) ve cüzdanınızla bağlanır.
+                            Sertifikanız üretildiğinde bu profil adı kayda kalıcı olarak mühürlenir (snapshot) ve cüzdanınızla bağlanır. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, resmî kimlik doğrulaması yerine geçmez.
                           </p>
                         </div>
                       ) : (

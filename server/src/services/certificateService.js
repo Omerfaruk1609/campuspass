@@ -200,13 +200,13 @@ export function createCertificateService({
       explorerTxUrl: `${MONAD_EXPLORER_URL}/tx/${row.attendanceTxHash}`,
       explorerContractUrl: `${MONAD_EXPLORER_URL}/address/${checksumContract}`,
       disclaimer:
-        "Bu belge resmî bir üniversite diploması veya akademik yeterlilik belgesi değildir; yalnızca belirtilen cüzdan adresinin Monad Testnet üzerindeki CampusPass akıllı sözleşmesinde doğrulanmış etkinlik katılımını (AttendanceMarked) temsil eder.",
+        "Bu belge resmî bir üniversite diploması veya akademik yeterlilik belgesi değildir; yalnızca belirtilen cüzdan adresinin Monad Testnet üzerindeki CampusPass akıllı sözleşmesinde doğrulanmış etkinlik katılımını (AttendanceMarked) temsil eder. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, yasal kimlik belgesi yerine geçmez.",
     };
 
     if (includePrivateDisplayName) {
       dto.displayName = row.displayName || null;
       dto.displayNameDisclaimer = row.displayName
-        ? "Bu gösterim adı cüzdan sahibinin CampusPass profilinden doğrulanarak sertifikaya mühürlenmiştir."
+        ? "Bu gösterim adı cüzdan sahibinin CampusPass profilinde kayıtlı katılımcı adı olarak sertifikaya mühürlenmiştir. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, resmî kimlik doğrulaması yerine geçmez."
         : null;
     }
 

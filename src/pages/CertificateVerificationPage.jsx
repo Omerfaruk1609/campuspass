@@ -362,7 +362,7 @@ export default function CertificateVerificationPage({
 
                 <div className="verify-detail-item">
                   <span className="verify-detail-label">
-                    Sertifika Sahibi (Katılımcı)
+                    Sertifika Sahibi (Profilde Kayıtlı Ad)
                   </span>
                   <span className="verify-detail-value">
                     {cert.recipientName || cert.displayName ? (
@@ -371,7 +371,7 @@ export default function CertificateVerificationPage({
                       </strong>
                     ) : (
                       <span style={{ color: "var(--stitch-outline, #94a3b8)" }}>
-                        (Profil ismi tanımlanmamış)
+                        (Profilde kayıtlı katılımcı adı tanımlanmamış)
                       </span>
                     )}
                   </span>
@@ -379,7 +379,7 @@ export default function CertificateVerificationPage({
 
                 <div className="verify-detail-item">
                   <span className="verify-detail-label">
-                    Doğrulanan Cüzdan Adresi (Zincir Kimliği)
+                    Doğrulanan Cüzdan Adresi (Kriptografik Sahiplik Kimliği)
                   </span>
                   <span className="verify-detail-value">
                     <code>{cert.participantAddress}</code>

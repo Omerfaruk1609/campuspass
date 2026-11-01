@@ -86,7 +86,7 @@ export default function CertificateModal({
           <div className="cert-modal-meta">
             {(certificate.recipientName || certificate.displayName) && (
               <span className="cert-id-pill" style={{ color: "#e6c665" }}>
-                👤 Alıcı: <strong>{certificate.recipientName || certificate.displayName}</strong>
+                👤 Profilde Kayıtlı Ad: <strong>{certificate.recipientName || certificate.displayName}</strong>
               </span>
             )}
             <span className="cert-id-pill">

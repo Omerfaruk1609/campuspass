@@ -533,7 +533,7 @@ export default function OrganizerEventAnalyticsPage(props) {
                     <td>
                       <div>
                         <div style={{ fontWeight: 600, color: "var(--stitch-on-surface, #f1f5f9)" }}>
-                          {p.displayName || "Ad Soyad Belirtilmemiş"}
+                          {p.displayName || "Profilde Kayıtlı Ad Yok"}
                         </div>
                         <div className="participant-wallet-cell" style={{ marginTop: "2px" }}>
                           <span className="monospace" title={p.walletAddress}>
