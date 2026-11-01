@@ -684,6 +684,15 @@ export function mergeOnChainEventWithMetadata(
   const meta = stored || fallbackMeta;
   const status = computeEventStatus(meta, onChainEvent.active, nowMs);
 
+  const capacityNum = Number(onChainEvent.capacity ?? 0);
+  const registeredNum = Number(onChainEvent.registeredCount ?? 0);
+  const remainingCapacity = Math.max(0, capacityNum - registeredNum);
+  const isFull = capacityNum > 0 && registeredNum >= capacityNum;
+  const fillPercent =
+    capacityNum > 0
+      ? Math.min(100, Math.round((registeredNum / capacityNum) * 100))
+      : 0;
+
   const merged = {
     ...onChainEvent,
     compositeKey: buildEventCompositeKey(chainId, contractAddress, onChainEvent.id),
@@ -705,6 +714,11 @@ export function mergeOnChainEventWithMetadata(
     status,
     statusLabel: EVENT_STATUS_LABELS[status] || "Yaklaşan",
     verifiedAttendanceCount: Number(onChainEvent.verifiedAttendanceCount ?? 0),
+    capacity: capacityNum,
+    registeredCount: registeredNum,
+    remainingCapacity,
+    isFull,
+    fillPercent,
   };
 
   const eligibility = checkRegistrationEligibility(merged, nowMs);
@@ -716,7 +730,7 @@ export function mergeOnChainEventWithMetadata(
 }
 
 /**
- * Etkinlik arama, kategori/topluluk/durum filtreleme ve sıralama motoru.
+ * Etkinlik arama, kategori/topluluk/durum/kontenjan filtreleme ve sıralama motoru.
  */
 export function filterAndSortEvents(
   events,
@@ -724,13 +738,28 @@ export function filterAndSortEvents(
     searchQuery = "",
     category = "ALL",
     community = "ALL",
-    timeFilter = "ALL", // ALL | UPCOMING | PAST | CANCELLED
-    sortBy = "NEWEST", // NEWEST | DATE_ASC | DATE_DESC | FILL_DESC
+    timeFilter = "ALL", // ALL | UPCOMING | PAST | CANCELLED | upcoming | ongoing | completed | cancelled
+    availability = "ALL", // ALL | AVAILABLE | FULL
+    dateFrom = "",
+    dateTo = "",
+    sortBy = "NEWEST", // NEWEST | DATE_ASC | UPCOMING_ASC | DATE_DESC | FILL_DESC | REMAINING_DESC | CAPACITY_DESC
   } = {}
 ) {
   const normalizedQuery = String(searchQuery || "")
     .trim()
     .toLocaleLowerCase("tr-TR");
+
+  const fromMs = dateFrom
+    ? /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)
+      ? Date.parse(`${dateFrom}T00:00:00+03:00`)
+      : Date.parse(dateFrom)
+    : NaN;
+
+  const toMs = dateTo
+    ? /^\d{4}-\d{2}-\d{2}$/.test(dateTo)
+      ? Date.parse(`${dateTo}T23:59:59+03:00`)
+      : Date.parse(dateTo)
+    : NaN;
 
   const filtered = events.filter((ev) => {
     if (category && category !== "ALL" && ev.category !== category) {
@@ -741,12 +770,43 @@ export function filterAndSortEvents(
       return false;
     }
 
-    if (timeFilter === "UPCOMING") {
+    // Durum / Zaman Filtresi
+    if (timeFilter === "UPCOMING" || timeFilter === "upcoming") {
       if (ev.status !== "upcoming" && ev.status !== "ongoing") return false;
-    } else if (timeFilter === "PAST") {
+    } else if (timeFilter === "PAST" || timeFilter === "completed") {
       if (ev.status !== "completed") return false;
-    } else if (timeFilter === "CANCELLED") {
+    } else if (timeFilter === "CANCELLED" || timeFilter === "cancelled") {
       if (ev.status !== "cancelled") return false;
+    } else if (timeFilter === "ongoing") {
+      if (ev.status !== "ongoing") return false;
+    }
+
+    // Kontenjan / Erişilebilirlik Filtresi
+    const cap = Number(ev.capacity ?? 0);
+    const reg = Number(ev.registeredCount ?? 0);
+    const isFull = cap > 0 && reg >= cap;
+
+    if (availability === "AVAILABLE" || availability === "OPEN") {
+      if (isFull || ev.status === "cancelled" || ev.status === "completed") {
+        return false;
+      }
+    } else if (availability === "FULL") {
+      if (!isFull) return false;
+    }
+
+    // Tarih Aralığı Filtresi (dateFrom & dateTo)
+    const eventTimeMs = ev.startAt
+      ? Date.parse(ev.startAt)
+      : ev.date
+      ? Date.parse(`${ev.date}T12:00:00+03:00`)
+      : NaN;
+
+    if (!Number.isNaN(fromMs) && !Number.isNaN(eventTimeMs)) {
+      if (eventTimeMs < fromMs) return false;
+    }
+
+    if (!Number.isNaN(toMs) && !Number.isNaN(eventTimeMs)) {
+      if (eventTimeMs > toMs) return false;
     }
 
     if (normalizedQuery) {
@@ -773,7 +833,7 @@ export function filterAndSortEvents(
 
   const sorted = [...filtered];
   sorted.sort((a, b) => {
-    if (sortBy === "DATE_ASC") {
+    if (sortBy === "DATE_ASC" || sortBy === "UPCOMING_ASC") {
       return (Date.parse(a.startAt) || 0) - (Date.parse(b.startAt) || 0);
     }
     if (sortBy === "DATE_DESC") {
@@ -784,8 +844,16 @@ export function filterAndSortEvents(
       const fillB = b.capacity > 0 ? b.registeredCount / b.capacity : 0;
       return fillB - fillA;
     }
+    if (sortBy === "REMAINING_DESC") {
+      const remA = Math.max(0, Number(a.capacity || 0) - Number(a.registeredCount || 0));
+      const remB = Math.max(0, Number(b.capacity || 0) - Number(b.registeredCount || 0));
+      return remB - remA;
+    }
+    if (sortBy === "CAPACITY_DESC") {
+      return Number(b.capacity || 0) - Number(a.capacity || 0);
+    }
     // NEWEST (varsayılan: en yüksek eventId üstte)
-    return b.id - a.id;
+    return Number(b.id || 0) - Number(a.id || 0);
   });
 
   return sorted;

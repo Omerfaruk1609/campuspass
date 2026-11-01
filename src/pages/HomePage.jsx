@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import EventCard from "../components/EventCard";
@@ -165,12 +165,108 @@ export default function HomePage(props) {
     setCommunity(matched ? matched.name : "");
   }
 
-  // Keşif & Filtreleme State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
-  const [selectedCommunity, setSelectedCommunity] = useState("ALL");
-  const [timeFilter, setTimeFilter] = useState("ALL");
-  const [sortBy, setSortBy] = useState("NEWEST");
+  // Keşif & Filtreleme URL Query State Senkronizasyonu
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [searchQuery, setSearchQuery] = useState(
+    () => searchParams.get("q") || ""
+  );
+  const [selectedCategory, setSelectedCategory] = useState(
+    () => searchParams.get("category") || "ALL"
+  );
+  const [selectedCommunity, setSelectedCommunity] = useState(
+    () => searchParams.get("community") || "ALL"
+  );
+  const [timeFilter, setTimeFilter] = useState(
+    () => searchParams.get("status") || "ALL"
+  );
+  const [availability, setAvailability] = useState(
+    () => searchParams.get("availability") || "ALL"
+  );
+  const [sortBy, setSortBy] = useState(
+    () => searchParams.get("sort") || "NEWEST"
+  );
+
+  // Tarayıcı İleri/Geri geçmiş hareketlerinde URL parametrelerini yerel state'e yansıt
+  useEffect(() => {
+    const q = searchParams.get("q") || "";
+    const cat = searchParams.get("category") || "ALL";
+    const comm = searchParams.get("community") || "ALL";
+    const st = searchParams.get("status") || "ALL";
+    const avail = searchParams.get("availability") || "ALL";
+    const s = searchParams.get("sort") || "NEWEST";
+
+    const isTypingSearch =
+      typeof document !== "undefined" &&
+      document.activeElement?.id === "discovery-search-input";
+
+    if (!isTypingSearch) {
+      setSearchQuery(q);
+    }
+    setSelectedCategory(cat);
+    setSelectedCommunity(comm);
+    setTimeFilter(st);
+    setAvailability(avail);
+    setSortBy(s);
+  }, [searchParams]);
+
+  // Filtre değişikliklerini URL arama parametrelerine debounced senkronize et
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const nextParams = new URLSearchParams(searchParams);
+
+      if (searchQuery.trim()) {
+        nextParams.set("q", searchQuery.trim());
+      } else {
+        nextParams.delete("q");
+      }
+
+      if (selectedCategory && selectedCategory !== "ALL") {
+        nextParams.set("category", selectedCategory);
+      } else {
+        nextParams.delete("category");
+      }
+
+      if (selectedCommunity && selectedCommunity !== "ALL") {
+        nextParams.set("community", selectedCommunity);
+      } else {
+        nextParams.delete("community");
+      }
+
+      if (timeFilter && timeFilter !== "ALL") {
+        nextParams.set("status", timeFilter);
+      } else {
+        nextParams.delete("status");
+      }
+
+      if (availability && availability !== "ALL") {
+        nextParams.set("availability", availability);
+      } else {
+        nextParams.delete("availability");
+      }
+
+      if (sortBy && sortBy !== "NEWEST") {
+        nextParams.set("sort", sortBy);
+      } else {
+        nextParams.delete("sort");
+      }
+
+      if (nextParams.toString() !== searchParams.toString()) {
+        setSearchParams(nextParams, { replace: true });
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    searchQuery,
+    selectedCategory,
+    selectedCommunity,
+    timeFilter,
+    availability,
+    sortBy,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
 
@@ -183,7 +279,7 @@ export default function HomePage(props) {
     return Array.from(setObj);
   }, [events]);
 
-  // Sekme + Arama + Kategori + Topluluk + Zaman + Sıralama
+  // Sekme + Arama + Kategori + Topluluk + Zaman + Kontenjan + Sıralama
   const tabEvents = useMemo(() => {
     return events.filter((ev) => {
       if (activeTab === "student") return ev.isRegistered;
@@ -200,6 +296,7 @@ export default function HomePage(props) {
       category: selectedCategory,
       community: selectedCommunity,
       timeFilter,
+      availability,
       sortBy,
     });
   }, [
@@ -208,8 +305,43 @@ export default function HomePage(props) {
     selectedCategory,
     selectedCommunity,
     timeFilter,
+    availability,
     sortBy,
   ]);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      selectedCategory !== "ALL" ||
+      selectedCommunity !== "ALL" ||
+      timeFilter !== "ALL" ||
+      availability !== "ALL" ||
+      sortBy !== "NEWEST"
+  );
+
+  function handleClearFilters() {
+    setSearchQuery("");
+    setSelectedCategory("ALL");
+    setSelectedCommunity("ALL");
+    setTimeFilter("ALL");
+    setAvailability("ALL");
+    setSortBy("NEWEST");
+    setSearchParams({}, { replace: true });
+  }
+
+  // ⌘K / Ctrl+K kısayolu ile hızlı arama çubuğuna odaklanma
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        const input = document.getElementById("discovery-search-input");
+        if (input) {
+          e.preventDefault();
+          input.focus();
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Öne Çıkan Etkinlikler (Landing view için ilk 3 aktif etkinlik)
   const featuredEvents = useMemo(() => {
@@ -1272,7 +1404,7 @@ export default function HomePage(props) {
               style={{
                 padding: "1rem",
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                 gap: "0.75rem",
                 alignItems: "center",
               }}
@@ -1293,12 +1425,14 @@ export default function HomePage(props) {
                   search
                 </span>
                 <input
+                  id="discovery-search-input"
                   type="search"
                   className="stitch-input"
                   placeholder="Etkinlik adı, topluluk, açıklama veya salon ara..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{ paddingLeft: "2.5rem", paddingRight: "3rem" }}
+                  aria-label="Etkinlik, topluluk veya salon ara"
                 />
                 <span
                   className="font-label-mono"
@@ -1312,7 +1446,9 @@ export default function HomePage(props) {
                     borderRadius: "4px",
                     fontSize: "0.6875rem",
                     color: "var(--stitch-outline)",
+                    cursor: "pointer",
                   }}
+                  onClick={() => document.getElementById("discovery-search-input")?.focus()}
                 >
                   ⌘K
                 </span>
@@ -1320,6 +1456,7 @@ export default function HomePage(props) {
 
               {/* Kategori Seçici */}
               <select
+                id="discovery-category-select"
                 className="stitch-select"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
@@ -1335,6 +1472,7 @@ export default function HomePage(props) {
 
               {/* Topluluk Seçici */}
               <select
+                id="discovery-community-select"
                 className="stitch-select"
                 value={selectedCommunity}
                 onChange={(e) => setSelectedCommunity(e.target.value)}
@@ -1350,6 +1488,7 @@ export default function HomePage(props) {
 
               {/* Durum / Zaman Seçici */}
               <select
+                id="discovery-status-select"
                 className="stitch-select"
                 value={timeFilter}
                 onChange={(e) => setTimeFilter(e.target.value)}
@@ -1361,25 +1500,38 @@ export default function HomePage(props) {
                 <option value="CANCELLED">İptal Edilenler</option>
               </select>
 
+              {/* Kontenjan Durumu Seçici */}
+              <select
+                id="discovery-availability-select"
+                className="stitch-select"
+                value={availability}
+                onChange={(e) => setAvailability(e.target.value)}
+                aria-label="Kontenjan durumuna göre filtrele"
+              >
+                <option value="ALL">Tüm Kontenjanlar</option>
+                <option value="AVAILABLE">Yeri Olanlar (Açık)</option>
+                <option value="FULL">Kontenjanı Dolanlar</option>
+              </select>
+
               {/* Sıralama Seçici */}
               <select
+                id="discovery-sort-select"
                 className="stitch-select"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 aria-label="Sıralama ölçütü"
               >
                 <option value="NEWEST">En Yeni Oluşturulan</option>
-                <option value="DATE_ASC">Tarihe Göre (Yakından Uzağa)</option>
-                <option value="DATE_DESC">Tarihe Göre (Uzaktan Yakına)</option>
-                <option value="FILL_DESC">Doluluk Oranına Göre</option>
+                <option value="DATE_ASC">Tarihe Göre (En Yakın Önce)</option>
+                <option value="DATE_DESC">Tarihe Göre (En Uzak Önce)</option>
+                <option value="REMAINING_DESC">En Çok Boş Kontenjan</option>
+                <option value="FILL_DESC">Doluluk Oranına Göre (% Yüksek)</option>
+                <option value="CAPACITY_DESC">Toplam Kapasiteye Göre</option>
               </select>
             </div>
 
             {/* Aktif Filtre Bilgisi ve Temizle Butonu */}
-            {(searchQuery ||
-              selectedCategory !== "ALL" ||
-              selectedCommunity !== "ALL" ||
-              timeFilter !== "ALL") && (
+            {hasActiveFilters && (
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                 <span className="font-body-sm text-outline">Filtrelenmiş Sonuçlar:</span>
                 <span className="stitch-badge stitch-badge-testnet">
@@ -1388,12 +1540,7 @@ export default function HomePage(props) {
                 <button
                   type="button"
                   className="stitch-btn-secondary"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setSelectedCategory("ALL");
-                    setSelectedCommunity("ALL");
-                    setTimeFilter("ALL");
-                  }}
+                  onClick={handleClearFilters}
                   style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem" }}
                 >
                   ✕ Filtreleri Sıfırla
@@ -1419,9 +1566,16 @@ export default function HomePage(props) {
                 <h3 className="font-headline-sm" style={{ marginTop: "1rem", color: "var(--stitch-on-surface)" }}>
                   Aradığınız kriterlere uygun etkinlik bulunamadı
                 </h3>
-                <p className="font-body-sm text-on-surface-variant">
-                  Farklı arama kelimeleri deneyebilir veya filtreleri sıfırlayabilirsiniz.
+                <p className="font-body-sm text-on-surface-variant" style={{ maxWidth: "460px", margin: "0.5rem auto 1.5rem auto" }}>
+                  Farklı arama kelimeleri deneyebilir veya filtreleri sıfırlayarak tüm etkinlikleri listeleyebilirsiniz.
                 </p>
+                <button
+                  type="button"
+                  className="stitch-btn-secondary"
+                  onClick={handleClearFilters}
+                >
+                  Filtreleri Sıfırla
+                </button>
               </div>
             ) : (
               <div className="stitch-events-grid events-grid">

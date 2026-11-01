@@ -178,6 +178,15 @@ export function createEventService({ prisma, blockchainService, notificationServ
     const meta = formattedMeta || fallbackMeta;
     const status = computeEventStatus(meta, onChainEvent.active, nowMs);
 
+    const capacityNum = Number(onChainEvent.capacity ?? 0);
+    const registeredNum = Number(onChainEvent.registeredCount ?? 0);
+    const remainingCapacity = Math.max(0, capacityNum - registeredNum);
+    const isFull = capacityNum > 0 && registeredNum >= capacityNum;
+    const fillPercent =
+      capacityNum > 0
+        ? Math.min(100, Math.round((registeredNum / capacityNum) * 100))
+        : 0;
+
     const merged = {
       id: onChainEvent.id,
       eventId: onChainEvent.id,
@@ -186,8 +195,11 @@ export function createEventService({ prisma, blockchainService, notificationServ
       compositeKey: buildEventCompositeKey(chainId, contractAddress, onChainEvent.id),
       organizer: onChainEvent.organizer,
       title: onChainEvent.title,
-      capacity: onChainEvent.capacity,
-      registeredCount: onChainEvent.registeredCount,
+      capacity: capacityNum,
+      registeredCount: registeredNum,
+      remainingCapacity,
+      isFull,
+      fillPercent,
       active: onChainEvent.active,
       hasCustomMetadata: Boolean(formattedMeta),
       description: meta.description,
@@ -312,22 +324,17 @@ export function createEventService({ prisma, blockchainService, notificationServ
     }
 
     const statusParam = queryParams.status || "ALL";
-    let timeFilter = "ALL";
-    if (["UPCOMING", "PAST", "CANCELLED"].includes(statusParam)) {
-      timeFilter = statusParam;
-    }
 
-    let filtered = filterAndSortEvents(mergedList, {
+    const filtered = filterAndSortEvents(mergedList, {
       searchQuery: queryParams.search || "",
       category: queryParams.category || "ALL",
       community: queryParams.community || "ALL",
-      timeFilter,
+      timeFilter: statusParam,
+      availability: queryParams.availability || "ALL",
+      dateFrom: queryParams.dateFrom || "",
+      dateTo: queryParams.dateTo || "",
       sortBy: queryParams.sortBy || "NEWEST",
     });
-
-    if (["upcoming", "ongoing", "completed", "cancelled"].includes(statusParam)) {
-      filtered = filtered.filter((ev) => ev.status === statusParam);
-    }
 
     const page = Number(queryParams.page) || 1;
     const limit = Number(queryParams.limit) || 20;
