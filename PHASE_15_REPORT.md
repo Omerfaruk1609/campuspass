@@ -128,8 +128,11 @@ SIWE oturum açma akışının manuel olarak doğrulanmasının ardından tespit
 * **İstemci & Sunucu Koruması:** `src/utils/qrVerification.js` ve `POST /api/events/:eventId/attendance/verify` uç noktası; doğrulayıcının SIWE kimliğini, etkinlik organizatörü veya topluluk `OWNER`/`ADMIN` yetkisini (`403 ATTENDANCE_VERIFIER_UNAUTHORIZED`), kendi QR kodunu okutma girişimini (`verifier === participant` veya `participant === event.organizer` -> `403 SELF_ATTENDANCE_FORBIDDEN`), farklı etkinlik QR kodlarını (`400 QR_CROSS_EVENT_REJECTED`), süresi dolmuş/manipüle edilmiş TTL değerlerini (`400 QR_EXPIRED_OR_INVALID_TTL`) ve tek kullanımlık nonce tekrarını (`409 QR_NONCE_REPLAY_DETECTED`) reddeder.
 * **Durum Ayrımı:** Doğrulama sonucunda `"Kayıt Durumu (registrationExists)"` ile `"Katılım Durumu (attendanceVerified)"` açıkça ayrıştırılmıştır.
 
-### 7.5. Katılım Doğrulaması Sonrası Sertifika Üretimi ve Bildirim
+### 7.5. Katılım Doğrulaması Sonrası Sertifika Üretimi, Alıcı Kimliği Snapshot ve Bildirim
 * **Yetki ve Koşul:** `server/src/services/certificateService.js` yalnızca blokzincir/indeks üzerinde katılımı doğrulanmış (`AttendanceMarked`) katılımcılar için sertifika üretir (`403 ATTENDANCE_NOT_VERIFIED_ONCHAIN`). Sertifika hem katılımcı öğrenci tarafından hem de yetkili organizatör/topluluk yöneticisi tarafından (`OrganizerEventAnalyticsPage` üzerindeki `"🎓 Sertifika Ver"` aksiyonu ile) üretilebilir; mükerrer üretim idempotent olarak engellenir (`200 OK`, `created: false`).
+* **Sunucu Güvenliğinde Profil Tam Adı Snapshotting (Final Polish):** Sertifika üzerindeki alıcı ismi ASLA sadece istek gövdesinden (request body) gelen veriye dayandırılmaz; katılımcının sunucu tarafında doğrulanmış `StudentProfile.displayName` kaydı sorgulanarak sertifika oluşturulduğu anda `AttendanceCertificate.displayName` alanına mühürlenir (snapshot). Öğrencinin sonradan profil adını değiştirmesi, önceden düzenlenmiş sertifikadaki resmi adı sessizce değiştiremez (Snapshot Immutability).
+* **Birincil Alıcı Sunumu & Cüzdan Bağı:** SVG ve PDF sertifikalarında birincil alıcı olarak doğrulanmış profil tam adı büyük ve prestijli puntoyla (`SERTİFİKA SAHİBİ / DOĞRULANMIŞ KATILIMCI`) sunulur; katılımcı cüzdan adresi ise altta zincir üstü bağlayıcı kimlik (`Doğrulanmış Cüzdan Kimliği`) olarak gösterilir. Ham cüzdan adresi artık birincil görsel alıcı kimliği olarak kullanılmaz.
+* **İsim Eksikliği & Sahte İsim Engeli:** Profilde geçerli tam ad yoksa hiçbir sahte isim uydurulmaz (do not fabricate one); onaylanmış ürün kuralları uyarınca cüzdan adresi deliberate fallback olarak saklanır veya arayüzden tetiklenen `requireProfileName` ile `400 PROFILE_NAME_REQUIRED` dönülerek kullanıcı Hesap Ayarları'na yönlendirilir.
 * **Bildirim:** Yeni sertifika üretildiğinde Faz 15 bildirim servisi üzerinden katılımcıya otomatik `CERTIFICATE_ISSUED` bildirimi iletilir.
 
 ---
@@ -138,7 +141,7 @@ SIWE oturum açma akışının manuel olarak doğrulanmasının ardından tespit
 
 | Test Paketi | Test Sayısı | Başarılı | Başarısız | Açıklama |
 |---|---|---|---|---|
-| **Hardhat + Mocha / Chai Regresyon Testleri** | 198 | 198 | 0 | %100 Başarı (Faz 8–15 + 12 yeni Manuel Test Bulguları regresyon testi) |
+| **Hardhat + Mocha / Chai Regresyon Testleri** | 207 | 207 | 0 | %100 Başarı (Faz 8–15 + 8 yeni Alıcı Kimliği Snapshot regresyon testi) |
 | **Gerçek PostgreSQL Entegrasyon Testi** | 8 | 8 | 0 | Canlı PostgreSQL container'ı üzerinde CRUD, P2002 ve model doğrulama |
 | **Prisma Şema Doğrulaması** | 13 Model | 13 | 0 | `prisma validate` hatasız |
 | **Oxlint Kod Kalitesi** | 93+ Dosya | Tümü | 0 Hata | Statik analiz doğrulaması |
@@ -148,4 +151,4 @@ SIWE oturum açma akışının manuel olarak doğrulanmasının ardından tespit
 
 ## 9. Faz 16 İçin Hazırlık
 
-Faz 15 hedefleri ve manuel test düzeltmeleri eksiksiz tamamlanmış olup kod tabanı Monad Testnet ve yerel PostgreSQL üzerinde stabil çalışmaktadır. Faz 16'ya geçilmemiştir.
+Faz 15 hedefleri, manuel test düzeltmeleri ve Final Polish (Sertifika Alıcı Kimliği Snapshot ve Doğrulanmış Profil Tam Adı Sunumu) eksiksiz tamamlanmış olup kod tabanı Monad Testnet ve yerel PostgreSQL üzerinde stabil çalışmaktadır. Faz 16'ya geçilmemiştir.

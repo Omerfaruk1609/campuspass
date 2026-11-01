@@ -144,7 +144,6 @@ export default function StudentProfile(props) {
   const [loadingCertificates, setLoadingCertificates] = useState(false);
   const [certBanner, setCertBanner] = useState(null);
   const [issuingEventId, setIssuingEventId] = useState(null);
-  const [optionalDisplayName, setOptionalDisplayName] = useState("");
   const [selectedCertificateModal, setSelectedCertificateModal] = useState(null);
   const [copiedCertId, setCopiedCertId] = useState(null);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -432,6 +431,17 @@ export default function StudentProfile(props) {
   async function handleIssueCertificate(eventId) {
     if (!account) return;
     setCertBanner(null);
+
+    const profileName = userProfile?.displayName?.trim() || "";
+    if (!profileName) {
+      setCertBanner({
+        type: "warning",
+        message:
+          "Sertifikanızda adınızın yer alabilmesi için lütfen önce Hesap Ayarları (/settings) sayfasından Ad ve Soyad bilgilerinizi kaydedin.",
+      });
+      return;
+    }
+
     setIssuingEventId(eventId);
 
     try {
@@ -453,7 +463,7 @@ export default function StudentProfile(props) {
       const result = await issueCertificateOnBackend({
         eventId,
         walletAddress: account,
-        displayName: optionalDisplayName.trim(),
+        requireProfileName: true,
       });
 
       await loadCertificatesForAccount(account);
@@ -463,7 +473,7 @@ export default function StudentProfile(props) {
         type: "success",
         message: result.idempotent
           ? `Etkinlik #${eventId} için mevcut doğrulanmış sertifikanız yüklendi (${result.certificate.certificateId}).`
-          : `Etkinlik #${eventId} için blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu! (${result.certificate.certificateId})`,
+          : `Etkinlik #${eventId} için "${result.certificate.recipientName || profileName}" adına blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu! (${result.certificate.certificateId})`,
       });
     } catch (err) {
       setCertBanner({
@@ -1078,21 +1088,75 @@ export default function StudentProfile(props) {
                     </div>
 
                     {attendedEvents.length > 0 && (
-                      <div style={{ marginTop: "1rem" }}>
-                        <label className="font-label-badge text-outline" htmlFor="cert-name-input">
-                          İsteğe Bağlı Sertifika Gösterim Adı (Zorunlu Değil):
-                        </label>
-                        <input
-                          id="cert-name-input"
-                          type="text"
-                          maxLength={80}
-                          className="stitch-input"
-                          value={optionalDisplayName}
-                          onChange={(e) => setOptionalDisplayName(e.target.value)}
-                          placeholder="Boş bırakırsanız yalnızca cüzdan adresiniz gösterilir"
-                          style={{ marginTop: "0.35rem" }}
-                        />
-                      </div>
+                      userProfile?.displayName?.trim() ? (
+                        <div
+                          className="stitch-card"
+                          style={{
+                            marginTop: "1rem",
+                            padding: "0.85rem 1.15rem",
+                            background: "rgba(16, 185, 129, 0.08)",
+                            border: "1px solid rgba(16, 185, 129, 0.25)",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span className="material-symbols-outlined" style={{ color: "#34d399", fontSize: "20px" }}>
+                                verified_user
+                              </span>
+                              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface)" }}>
+                                Doğrulanmış Sertifika Alıcısı: <strong style={{ color: "#34d399" }}>{userProfile.displayName.trim()}</strong>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="stitch-btn-secondary"
+                              onClick={() => navigate("/settings")}
+                              style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+                            >
+                              Adı Düzenle
+                            </button>
+                          </div>
+                          <p className="font-body-xs text-on-surface-variant" style={{ margin: "0.35rem 0 0" }}>
+                            Sertifikanız üretildiğinde bu profil adı kayda kalıcı olarak mühürlenir (snapshot) ve cüzdanınızla bağlanır.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className="stitch-card"
+                          style={{
+                            marginTop: "1rem",
+                            padding: "0.85rem 1.15rem",
+                            background: "rgba(245, 158, 11, 0.08)",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span className="material-symbols-outlined" style={{ color: "#fbbf24", fontSize: "20px" }}>
+                                warning
+                              </span>
+                              <div>
+                                <span className="font-body-sm" style={{ color: "var(--stitch-on-surface)", fontWeight: 600 }}>
+                                  Profil Adınız Eksik
+                                </span>
+                                <p className="font-body-xs text-on-surface-variant" style={{ margin: "0.15rem 0 0" }}>
+                                  Sertifikanızın adınıza düzenlenebilmesi için profil bilgilerinizi tamamlamalısınız.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="stitch-btn-primary"
+                              onClick={() => navigate("/settings")}
+                              style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                            >
+                              Profili Tamamla (/settings)
+                            </button>
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
 

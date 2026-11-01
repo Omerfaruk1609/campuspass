@@ -30,7 +30,7 @@
 * **Kimlik Doğrulama:** EIP-4361 (SIWE) + Tek Kullanımlık Atomik Nonce + `HttpOnly; SameSite=Lax` Oturum Çerezi + `X-CSRF-Token` + Sekmeler Arası Eşitleme (`campuspass_auth_event`)
 * **Blokzincir Entegrasyonu:** Ethers.js v6 + Salt-Okunur RPC ve İmzacı Sağlayıcı
 * **Event Indexer:** Blokzincir olaylarını (`EventCreated`, `UserRegistered`, `AttendanceMarked`) aralıksız tarayan ve reorg korumalı checkpoint tablosunda saklayan indeksleyici servis
-* **Dijital Katılım Sertifikaları (Faz 10):** `AttendanceMarked` kanıtlı, `CP-CERT-V1` SHA-256 + HMAC-SHA256 bütünlük mühürlü, yatay A4 PDF indirilebilir ve `/verify/:certificateId` üzerinden kamuya açık doğrulanabilir sertifika motoru
+* **Dijital Katılım Sertifikaları (Faz 10 & 15 Polish):** `AttendanceMarked` kanıtlı, sunucu güvenliğinde doğrulanmış profil tam adı mühürlü (`StudentProfile.displayName` snapshot), `CP-CERT-V1` SHA-256 + HMAC-SHA256 bütünlük mühürlü, yatay A4 PDF indirilebilir ve `/verify/:certificateId` üzerinden kamuya açık doğrulanabilir sertifika motoru
 * **Organizatör Analitiği (Faz 11):** Dönüşüm hunisi, doluluk oranları, tekil erişim, zaman serisi grafikleri ve formula injection korumalı CSV ihracı
 * **Üniversite Topluluk Yönetimi (Faz 12):** Kulüp profilleri, rol tabanlı yetkilendirme (`OWNER`, `ADMIN`, `MEMBER`), üyelik onay döngüsü, güvenli etkinlik-topluluk bağlama
 * **Güvenlik ve Entegrasyon Stabilizasyonu (Faz 13):** Çoklu kiracılık korumalı etkinlik bağlantı yönetimi, isteğe bağlı oturum çözme (`optionalAuthSession`), cüzdan ayırma (disconnect) ile SIWE logout ayrımı, merkezi oturum menüsü

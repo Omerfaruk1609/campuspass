@@ -436,6 +436,7 @@ export async function issueCertificateOnBackend({
   eventId,
   walletAddress,
   displayName = "",
+  requireProfileName = false,
   customFetch = null,
 }) {
   const res = await apiRequest("/certificates", {
@@ -444,6 +445,7 @@ export async function issueCertificateOnBackend({
       eventId: Number(eventId),
       walletAddress,
       displayName,
+      requireProfileName: Boolean(requireProfileName),
     },
     customFetch,
   });

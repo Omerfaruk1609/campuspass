@@ -289,6 +289,7 @@ export const certificateIssueBodySchema = z.object({
   displayName: safeTextField("Sertifika görüntüleme adı", 80, false)
     .optional()
     .default(""),
+  requireProfileName: z.boolean().optional().default(false),
 });
 
 export const studentProfileUpdateSchema = z.object({

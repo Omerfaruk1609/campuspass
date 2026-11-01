@@ -362,7 +362,24 @@ export default function CertificateVerificationPage({
 
                 <div className="verify-detail-item">
                   <span className="verify-detail-label">
-                    Katılımcı Cüzdan Adresi (Birincil Kimlik)
+                    Sertifika Sahibi (Katılımcı)
+                  </span>
+                  <span className="verify-detail-value">
+                    {cert.recipientName || cert.displayName ? (
+                      <strong style={{ fontSize: "1.05rem", color: "var(--stitch-primary, #60a5fa)" }}>
+                        {cert.recipientName || cert.displayName}
+                      </strong>
+                    ) : (
+                      <span style={{ color: "var(--stitch-outline, #94a3b8)" }}>
+                        (Profil ismi tanımlanmamış)
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                <div className="verify-detail-item">
+                  <span className="verify-detail-label">
+                    Doğrulanan Cüzdan Adresi (Zincir Kimliği)
                   </span>
                   <span className="verify-detail-value">
                     <code>{cert.participantAddress}</code>

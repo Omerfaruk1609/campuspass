@@ -190,6 +190,7 @@ export function createCertificateService({
         : null,
       organizerAddress: checksumOrganizer,
       participantAddress: checksumParticipant,
+      recipientName: row.displayName || null,
       attendanceTxHash: row.attendanceTxHash,
       attendanceBlockNumber: Number(row.attendanceBlockNumber),
       attendanceLogIndex: Number(row.attendanceLogIndex),
@@ -205,7 +206,7 @@ export function createCertificateService({
     if (includePrivateDisplayName) {
       dto.displayName = row.displayName || null;
       dto.displayNameDisclaimer = row.displayName
-        ? "Bu gösterim adı cüzdan sahibi tarafından beyan edilmiştir; bağımsız kimlik doğrulaması niteliği taşımaz."
+        ? "Bu gösterim adı cüzdan sahibinin CampusPass profilinden doğrulanarak sertifikaya mühürlenmiştir."
         : null;
     }
 
@@ -221,6 +222,7 @@ export function createCertificateService({
     eventId,
     requestedWalletAddress = null,
     displayName = "",
+    requireProfileName = false,
   }) {
     if (!sessionWalletAddress) {
       throw ApiError.unauthorized(
@@ -258,10 +260,35 @@ export function createCertificateService({
       normalizedParticipant = parsedTarget.normalizedAddress;
     }
 
-    const cleanDisplayName =
-      typeof displayName === "string" && displayName.trim()
-        ? displayName.trim()
-        : null;
+    // Güvenlik & Doğruluk İlkesi: Sertifika üzerindeki katılımcı ismi ASLA sadece
+    // istek gövdesindeki (request body) güvenilmez veriden kabul edilmez.
+    // Katılımcının sunucu tarafında doğrulanmış StudentProfile kaydı sorgulanır.
+    let trustedRecipientName = null;
+    if (prisma.studentProfile) {
+      const studentProf = await prisma.studentProfile.findUnique({
+        where: { walletAddress: normalizedParticipant },
+      });
+      if (
+        studentProf &&
+        typeof studentProf.displayName === "string" &&
+        studentProf.displayName.trim().length > 0
+      ) {
+        trustedRecipientName = studentProf.displayName.trim();
+      }
+    }
+
+    // İsim zorunluluğu bayrağı (requireProfileName) varsa ve profil ismi yoksa işlemi blokla
+    if (requireProfileName && !trustedRecipientName) {
+      throw ApiError.badRequest(
+        "Sertifika oluşturulabilmesi için CampusPass profilinizde geçerli bir ad ve soyad tanımlı olmalıdır. Lütfen Hesap Ayarları (/settings) sayfasından profilinizi tamamlayın.",
+        "PROFILE_NAME_REQUIRED"
+      );
+    }
+
+    // Sertifikaya mühürlenecek anlık (snapshot) katılımcı tam adı:
+    // Sahte isim uydurulmaz (do not fabricate one); profil adı varsa snapshot edilir,
+    // yoksa onaylı ürün kuralları gereği deliberate fallback (null) olarak saklanır.
+    const snapshottedRecipientName = trustedRecipientName || null;
 
     const lockKey = `${chainId}:${contractAddressNormalized}:${numEventId}:${normalizedParticipant}`;
     if (inFlightIssuanceMap.has(lockKey)) {
@@ -456,7 +483,7 @@ export function createCertificateService({
             data: {
               ...baseRecord,
               status: CERTIFICATE_STATUS.ACTIVE,
-              displayName: cleanDisplayName ?? existing.displayName,
+              displayName: snapshottedRecipientName ?? existing.displayName,
               certificateHash: integrity.certificateHash,
               integritySignature: integrity.integritySignature,
             },
@@ -492,7 +519,7 @@ export function createCertificateService({
           data: {
             ...baseRecord,
             status: CERTIFICATE_STATUS.ACTIVE,
-            displayName: cleanDisplayName,
+            displayName: snapshottedRecipientName,
             certificateHash: integrity.certificateHash,
             integritySignature: integrity.integritySignature,
             metadataUri: `/verify/${certificateId}`,
