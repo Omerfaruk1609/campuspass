@@ -24,6 +24,7 @@ import {
   mergeOnChainEventWithMetadata,
   validatePosterFile,
 } from "../utils/eventMetadata";
+import { downloadEventIcs } from "../utils/calendarIcs";
 import {
   fetchManageableCommunitiesFromBackend,
   verifyAttendanceOnBackend,
@@ -785,7 +786,19 @@ export default function EventPage(props) {
             Tüm Etkinliklere Dön
           </button>
 
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="stitch-btn-secondary"
+              onClick={() => downloadEventIcs(event)}
+              style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem" }}
+              title="Etkinliği takvim uygulamanıza ekleyin"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                calendar_add_on
+              </span>
+              Takvime Ekle (.ics)
+            </button>
             <button
               type="button"
               className="stitch-btn-secondary"
@@ -1021,12 +1034,27 @@ export default function EventPage(props) {
               </span>
             </div>
             <div style={{ flex: 1 }}>
-              <div className="font-label-badge text-outline">KONTENJAN DURUMU</div>
+              <div className="font-label-badge text-outline" style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>KONTENJAN DURUMU</span>
+                {isFull ? (
+                  <span style={{ color: "var(--stitch-error)", fontWeight: 700 }}>DOLDU</span>
+                ) : (
+                  <span style={{ color: "var(--stitch-tertiary)", fontWeight: 600 }}>
+                    {Math.max(0, (event.capacity || 0) - (event.registeredCount || 0))} Boş Yer
+                  </span>
+                )}
+              </div>
               <div className="font-headline-sm" style={{ fontSize: "0.875rem" }}>
                 {event.registeredCount} / {event.capacity} Katılımcı (%{fillPercent})
               </div>
               <div className="stitch-progress-track" style={{ marginTop: "0.35rem" }}>
-                <div className="stitch-progress-fill" style={{ width: `${fillPercent}%` }} />
+                <div
+                  className="stitch-progress-fill"
+                  style={{
+                    width: `${fillPercent}%`,
+                    backgroundColor: isFull ? "var(--stitch-error)" : "var(--stitch-primary)",
+                  }}
+                />
               </div>
             </div>
           </div>

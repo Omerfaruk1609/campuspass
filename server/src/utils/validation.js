@@ -73,9 +73,23 @@ export const eventsQuerySchema = z.object({
     .enum(["ALL", "UPCOMING", "PAST", "CANCELLED", "upcoming", "ongoing", "completed", "cancelled"])
     .optional()
     .default("ALL"),
+  availability: z
+    .enum(["ALL", "AVAILABLE", "OPEN", "FULL"])
+    .optional()
+    .default("ALL"),
+  dateFrom: z.string().max(40).optional().default(""),
+  dateTo: z.string().max(40).optional().default(""),
   organizer: z.string().optional(),
   sortBy: z
-    .enum(["NEWEST", "DATE_ASC", "DATE_DESC", "FILL_DESC"])
+    .enum([
+      "NEWEST",
+      "DATE_ASC",
+      "UPCOMING_ASC",
+      "DATE_DESC",
+      "FILL_DESC",
+      "REMAINING_DESC",
+      "CAPACITY_DESC",
+    ])
     .optional()
     .default("NEWEST"),
 });

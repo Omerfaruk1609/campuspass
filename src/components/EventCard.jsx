@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { formatTurkeyDateOnly } from "../utils/eventMetadata";
+import { downloadEventIcs } from "../utils/calendarIcs";
 
 export default function EventCard({
   event,
@@ -350,9 +351,19 @@ export default function EventCard({
               fontSize: "0.75rem",
             }}
           >
-            <span className="text-on-surface-variant">Kontenjan Durumu</span>
+            <span className="text-on-surface-variant">
+              {isFull ? (
+                <strong style={{ color: "var(--stitch-error)" }}>Kontenjan Doldu</strong>
+              ) : (typeof event.remainingCapacity === "number" ? event.remainingCapacity : Math.max(0, (event.capacity || 0) - (event.registeredCount || 0))) <= 10 && (typeof event.remainingCapacity === "number" ? event.remainingCapacity : Math.max(0, (event.capacity || 0) - (event.registeredCount || 0))) > 0 ? (
+                <strong style={{ color: "var(--stitch-tertiary)" }}>
+                  Son {typeof event.remainingCapacity === "number" ? event.remainingCapacity : Math.max(0, (event.capacity || 0) - (event.registeredCount || 0))} Kontenjan
+                </strong>
+              ) : (
+                <span>Kontenjan: {event.registeredCount} / {event.capacity}</span>
+              )}
+            </span>
             <span className="font-label-mono text-outline">
-              {event.registeredCount} / {event.capacity} ({fillPercent}%)
+              %{fillPercent} Dolu
             </span>
           </div>
 
@@ -404,6 +415,29 @@ export default function EventCard({
         >
           Detay &amp; İşlemler
         </Link>
+
+        <button
+          type="button"
+          className="stitch-btn-secondary"
+          title="Takvime Ekle (.ics İndir)"
+          aria-label={`${event.title} etkinliğini takvime ekle`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            downloadEventIcs(event);
+          }}
+          style={{
+            padding: "0.5rem 0.65rem",
+            fontSize: "0.875rem",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+            calendar_add_on
+          </span>
+        </button>
 
         {!event.isRegistered && event.canRegisterByTime && !isFull && onQuickRegister ? (
           <button
