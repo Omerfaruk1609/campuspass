@@ -683,7 +683,7 @@ export default function StudentProfile(props) {
 
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                   <h1 className="font-headline-md" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
-                    {userProfile?.displayName || account}
+                    {userProfile?.displayName || `Öğrenci Hesabı (${shortenAddress(account)})`}
                   </h1>
                   <button
                     type="button"
@@ -697,6 +697,25 @@ export default function StudentProfile(props) {
                     {copiedWallet ? "Kopyalandı ✓" : "Adresi Kopyala"}
                   </button>
                 </div>
+
+                {!userProfile?.displayName && (
+                  <div
+                    style={{
+                      marginTop: "0.5rem",
+                      fontSize: "0.82rem",
+                      color: "#fbbf24",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span>⚠️ Profil Adı Tanımlanmamış: Sertifikalarınızda adınızın yer alması için</span>
+                    <Link to="/settings" style={{ color: "#60a5fa", textDecoration: "underline" }}>
+                      Hesap Ayarlarından Profilinizi Tamamlayın →
+                    </Link>
+                  </div>
+                )}
 
                 {userProfile?.bio && (
                   <p style={{ margin: "0.4rem 0 0 0", fontSize: "0.875rem", color: "var(--stitch-outline)", maxWidth: "600px" }}>

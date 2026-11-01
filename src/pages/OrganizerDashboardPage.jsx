@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import {
   MONAD_CHAIN_ID,
   MONAD_EXPLORER_URL,
+  shortenAddress,
 } from "../data/events";
 import {
   downloadOrganizerEventCsv,
@@ -291,7 +292,9 @@ export default function OrganizerDashboardPage(props) {
               </span>
             </div>
 
-            <h1 className="profile-wallet-title monospace">{account}</h1>
+            <h1 className="profile-wallet-title monospace" title={account}>
+              {shortenAddress(account)}
+            </h1>
 
             <div className="profile-links-row">
               <a

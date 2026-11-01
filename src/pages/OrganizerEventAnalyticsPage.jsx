@@ -206,14 +206,20 @@ export default function OrganizerEventAnalyticsPage(props) {
       const res = await issueCertificateOnBackend({
         eventId: Number(eventId),
         walletAddress: participantAddress,
+        requireProfileName: true,
       });
 
       const certId = res?.data?.certificateId || "";
+      const recipientDisplayName = res?.data?.recipientName || res?.data?.displayName;
+      const targetLabel = recipientDisplayName
+        ? `"${recipientDisplayName}" (${shortenAddress(participantAddress)})`
+        : shortenAddress(participantAddress);
+
       setCertActionBanner({
         type: "success",
         text: res?.idempotent
-          ? `${shortenAddress(participantAddress)} için mevcut sertifika doğrulandı (${certId}).`
-          : `${shortenAddress(participantAddress)} için dijital katılım sertifikası başarıyla verildi (${certId}).`,
+          ? `${targetLabel} için mevcut sertifika doğrulandı (${certId}).`
+          : `${targetLabel} için dijital katılım sertifikası başarıyla verildi (${certId}).`,
       });
 
       await loadEventAnalytics();
@@ -445,7 +451,7 @@ export default function OrganizerEventAnalyticsPage(props) {
             <div className="search-box">
               <input
                 type="text"
-                placeholder="Cüzdan adresi ile ara (0x...)"
+                placeholder="Cüzdan adresi veya isim ile ara..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="search-input"
@@ -514,7 +520,7 @@ export default function OrganizerEventAnalyticsPage(props) {
             <table className="analytics-table">
               <thead>
                 <tr>
-                  <th>Katılımcı Cüzdan</th>
+                  <th>Katılımcı</th>
                   <th>Kayıt Zamanı (TSİ)</th>
                   <th>Kayıt Onayı</th>
                   <th>Katılım Durumu</th>
@@ -525,27 +531,32 @@ export default function OrganizerEventAnalyticsPage(props) {
                 {participants.map((p) => (
                   <tr key={p.walletAddress}>
                     <td>
-                      <div className="participant-wallet-cell">
-                        <span className="monospace" title={p.walletAddress}>
-                          {shortenAddress(p.walletAddress)}
-                        </span>
-                        <button
-                          type="button"
-                          className="copy-mini-btn"
-                          title="Cüzdan adresini kopyala"
-                          onClick={() => handleCopyAddress(p.walletAddress)}
-                        >
-                          {copiedAddress === p.walletAddress ? "✓" : "📋"}
-                        </button>
-                        <a
-                          href={`${MONAD_EXPLORER_URL}/address/${p.walletAddress}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="explorer-mini-link"
-                          title="Monad Explorer'da gör"
-                        >
-                          ↗
-                        </a>
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--stitch-on-surface, #f1f5f9)" }}>
+                          {p.displayName || "Ad Soyad Belirtilmemiş"}
+                        </div>
+                        <div className="participant-wallet-cell" style={{ marginTop: "2px" }}>
+                          <span className="monospace" title={p.walletAddress}>
+                            {shortenAddress(p.walletAddress)}
+                          </span>
+                          <button
+                            type="button"
+                            className="copy-mini-btn"
+                            title="Cüzdan adresini kopyala"
+                            onClick={() => handleCopyAddress(p.walletAddress)}
+                          >
+                            {copiedAddress === p.walletAddress ? "✓" : "📋"}
+                          </button>
+                          <a
+                            href={`${MONAD_EXPLORER_URL}/address/${p.walletAddress}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="explorer-mini-link"
+                            title="Monad Explorer'da gör"
+                          >
+                            ↗
+                          </a>
+                        </div>
                       </div>
                     </td>
                     <td>
@@ -598,16 +609,24 @@ export default function OrganizerEventAnalyticsPage(props) {
                           </span>
                         </div>
                       ) : p.isAttended ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={issuingCertForWallet === p.walletAddress}
-                          onClick={() => handleIssueCertificateForParticipant(p.walletAddress)}
-                        >
-                          {issuingCertForWallet === p.walletAddress
-                            ? "Veriliyor..."
-                            : "🎓 Sertifika Ver"}
-                        </button>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={issuingCertForWallet === p.walletAddress}
+                            onClick={() => handleIssueCertificateForParticipant(p.walletAddress)}
+                            title={p.displayName ? `"${p.displayName}" adına sertifika oluştur` : "Katılımcının profilinde ad ve soyad tanımlı olmalıdır"}
+                          >
+                            {issuingCertForWallet === p.walletAddress
+                              ? "Veriliyor..."
+                              : "🎓 Sertifika Ver"}
+                          </button>
+                          {!p.displayName && (
+                            <span style={{ fontSize: "0.72rem", color: "#f59e0b" }}>
+                              ⚠️ Profil Adı Eksik
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="status-badge inactive" title="Önce katılım doğrulanmalıdır">
                           Katılım Bekleniyor

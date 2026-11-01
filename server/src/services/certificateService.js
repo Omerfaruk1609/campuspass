@@ -279,10 +279,10 @@ export function createCertificateService({
 
     // İsim zorunluluğu bayrağı (requireProfileName) varsa ve profil ismi yoksa işlemi blokla
     if (requireProfileName && !trustedRecipientName) {
-      throw ApiError.badRequest(
-        "Sertifika oluşturulabilmesi için CampusPass profilinizde geçerli bir ad ve soyad tanımlı olmalıdır. Lütfen Hesap Ayarları (/settings) sayfasından profilinizi tamamlayın.",
-        "PROFILE_NAME_REQUIRED"
-      );
+      const msg = isDelegatedRequest
+        ? "Sertifika oluşturulabilmesi için katılımcının CampusPass profilinde geçerli bir ad ve soyad tanımlı olmalıdır. Katılımcı henüz profilini (/settings) tamamlamamış."
+        : "Sertifika oluşturulabilmesi için CampusPass profilinizde geçerli bir ad ve soyad tanımlı olmalıdır. Lütfen Hesap Ayarları (/settings) sayfasından profilinizi tamamlayın.";
+      throw ApiError.badRequest(msg, "PROFILE_NAME_REQUIRED");
     }
 
     // Sertifikaya mühürlenecek anlık (snapshot) katılımcı tam adı:
