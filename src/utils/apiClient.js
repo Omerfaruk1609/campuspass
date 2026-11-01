@@ -436,6 +436,7 @@ export async function issueCertificateOnBackend({
   eventId,
   walletAddress,
   displayName = "",
+  requireProfileName = false,
   customFetch = null,
 }) {
   const res = await apiRequest("/certificates", {
@@ -444,6 +445,7 @@ export async function issueCertificateOnBackend({
       eventId: Number(eventId),
       walletAddress,
       displayName,
+      requireProfileName: Boolean(requireProfileName),
     },
     customFetch,
   });
@@ -1172,5 +1174,57 @@ export async function createEventAnnouncementOnBackend(
     body: payload,
     customFetch,
   });
+  return res.data;
+}
+
+export async function fetchManageableCommunitiesFromBackend({ customFetch = null } = {}) {
+  const res = await apiRequest("/communities/manageable", {
+    method: "GET",
+    customFetch,
+  });
+  return Array.isArray(res.data?.items) ? res.data.items : [];
+}
+
+export async function fetchStudentEventsFromBackend(
+  walletAddress,
+  { customFetch = null } = {}
+) {
+  const checksumWallet = ethers.getAddress(walletAddress);
+  const res = await apiRequest(
+    `/students/${encodeURIComponent(checksumWallet)}/events`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return res.data;
+}
+
+export async function verifyAttendanceOnBackend(
+  eventId,
+  payload,
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(`/events/${Number(eventId)}/attendance/verify`, {
+    method: "POST",
+    body: payload,
+    customFetch,
+  });
+  return res.data;
+}
+
+export async function syncStudentRegistrationOnBackend(
+  eventId,
+  payload = {},
+  { customFetch = null } = {}
+) {
+  const res = await apiRequest(
+    `/events/${Number(eventId)}/registrations/sync`,
+    {
+      method: "POST",
+      body: payload,
+      customFetch,
+    }
+  );
   return res.data;
 }

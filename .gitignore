@@ -17,18 +17,30 @@ server/dist
 coverage
 *.local
 
-# Environment, Keystore & Secrets (Never commit private keys or passwords)
+# Environment, Keystore & Secrets (Never commit private keys, passwords, or credentials)
 .env
 .env.*
+.env.local
+.env.*.local
 !.env.example
 server/.env
 server/.env.*
+server/.env.local
+server/.env.*.local
 !server/.env.example
 *.pem
 *.key
 *.keystore
 keystore/
 secrets.json
+credentials.json
+service-account*.json
+*.cert
+*.crt
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
 
 # Local Runtime Data & SQLite/Temp DB files
 server/data/*.json

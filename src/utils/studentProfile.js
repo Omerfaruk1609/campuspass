@@ -205,7 +205,7 @@ export function buildStudentTimeline(
 export async function queryContractEventsChunked(
   contract,
   filter,
-  { maxLookbackBlocks = 15000, chunkSize = 5000 } = {}
+  { maxLookbackBlocks = 90, chunkSize = 90 } = {}
 ) {
   if (!contract || !filter || typeof contract.queryFilter !== "function") {
     return [];
@@ -288,11 +288,26 @@ export async function fetchStudentProfileData({
       };
     }
 
-    // Öğrenciye ait gerçek işlem hash'lerini (varsa) parçalı olay sorgusuyla topla (isteğe bağlı, hata durumunda akışı engellemez)
+    const ids = Array.from({ length: totalEvents }, (_, idx) => idx + 1);
+
+    // Önce kayıt bayraklarını kontrollü ve retry korumalı olarak sorgula
+    const registeredIds = [];
+    for (const id of ids) {
+      try {
+        const isReg = await callWithRetry(() => contract.registered(id, normalizedWallet));
+        if (isReg) {
+          registeredIds.push(id);
+        }
+      } catch {
+        // Tekil kayıt hatasında atla
+      }
+    }
+
+    // Yalnızca kayıtlı etkinlik varsa işlem hash'lerini (isteğe bağlı) parçalı olay sorgusuyla topla
     const regTxByEvent = {};
     const attTxByEvent = {};
 
-    if (contract.filters) {
+    if (registeredIds.length > 0 && contract.filters) {
       try {
         const [regLogs, attLogs] = await Promise.all([
           typeof contract.filters.UserRegistered === "function"
@@ -324,21 +339,6 @@ export async function fetchStudentProfileData({
         }
       } catch {
         // İsteğe bağlı olay geçmişi sorgusu ana profil akışını kesmez
-      }
-    }
-
-    const ids = Array.from({ length: totalEvents }, (_, idx) => idx + 1);
-
-    // Rate-limit'e takılmamak için kayıt bayraklarını kontrollü ve retry korumalı olarak sorgula
-    const registeredIds = [];
-    for (const id of ids) {
-      try {
-        const isReg = await callWithRetry(() => contract.registered(id, normalizedWallet));
-        if (isReg) {
-          registeredIds.push(id);
-        }
-      } catch {
-        // Tekil kayıt hatasında atla
       }
     }
 

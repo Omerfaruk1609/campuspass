@@ -102,7 +102,8 @@ export const eventMetadataInputSchema = z
     title: safeTextField("Etkinlik başlığı", 120, false).optional(),
     capacity: z.coerce.number().int().min(0).optional(),
     description: safeTextField("Etkinlik açıklaması", 2000, true),
-    community: safeTextField("Düzenleyen topluluk / kulüp", 120, true),
+    communityId: z.string().trim().min(1).max(120).optional().nullable(),
+    community: safeTextField("Düzenleyen topluluk / kulüp", 120, false).optional().default(""),
     category: z.enum(EVENT_CATEGORIES, {
       errorMap: () => ({ message: "Geçersiz etkinlik kategorisi seçildi." }),
     }),
@@ -142,6 +143,19 @@ export const eventMetadataInputSchema = z
     organizerAddress: z.string().optional(), // İstemciden gelse bile sunucu bunu tek başına kabul etmez!
   })
   .superRefine((data, ctx) => {
+    const hasCommunityId =
+      typeof data.communityId === "string" && data.communityId.trim().length > 0;
+    const hasCommunityName =
+      typeof data.community === "string" && data.community.trim().length >= 2;
+
+    if (!hasCommunityId && !hasCommunityName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["communityId"],
+        message: "Düzenleyen topluluk / kulüp seçimi zorunludur.",
+      });
+    }
+
     const campus = data.location?.campus || data.campus;
     const building = data.location?.building || data.building;
     const room = data.location?.room || data.room;
@@ -275,6 +289,7 @@ export const certificateIssueBodySchema = z.object({
   displayName: safeTextField("Sertifika görüntüleme adı", 80, false)
     .optional()
     .default(""),
+  requireProfileName: z.boolean().optional().default(false),
 });
 
 export const studentProfileUpdateSchema = z.object({

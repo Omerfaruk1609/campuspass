@@ -151,6 +151,26 @@ export function buildCampusPassApp({
   app.use(createCorsMiddleware({ allowedOrigins }));
   app.use(globalRateLimiter);
 
+  // Kök karşılama ve API bilgi rotası
+  app.get("/", (req, res) => {
+    res.json({
+      name: "CampusPass Backend API",
+      status: "online",
+      version: "1.0.0",
+      environment: env.NODE_ENV,
+      frontendUrl: "http://localhost:5173",
+      endpoints: {
+        health: "/api/health",
+        events: "/api/events",
+        auth: "/api/auth",
+        students: "/api/students",
+        communities: "/api/communities",
+        notifications: "/api/notifications",
+        certificates: "/api/certificates",
+      },
+    });
+  });
+
   app.use("/api/health", createHealthRoutes({ healthController }));
   app.use("/api/auth", createAuthRoutes({ authController, authRateLimiter }));
   app.use(

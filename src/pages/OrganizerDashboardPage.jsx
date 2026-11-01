@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import {
   MONAD_CHAIN_ID,
   MONAD_EXPLORER_URL,
+  shortenAddress,
 } from "../data/events";
 import {
   downloadOrganizerEventCsv,
@@ -46,9 +47,12 @@ export default function OrganizerDashboardPage(props) {
     if (props.onCreateEventClick) {
       props.onCreateEventClick();
     } else if (navigate) {
-      navigate("/events");
+      navigate("/events?create=1");
     }
   };
+
+  const onCreateEventClick = props.onCreateEventClick || handleCreate;
+  const onSelectEvent = props.onSelectEvent || handleSelectEvent;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
@@ -288,7 +292,9 @@ export default function OrganizerDashboardPage(props) {
               </span>
             </div>
 
-            <h1 className="profile-wallet-title monospace">{account}</h1>
+            <h1 className="profile-wallet-title monospace" title={account}>
+              {shortenAddress(account)}
+            </h1>
 
             <div className="profile-links-row">
               <a

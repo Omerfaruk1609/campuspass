@@ -456,18 +456,50 @@ export function createOrganizerAnalyticsService({
     const attMap = new Map(indexedAtts.map((a) => [a.participantAddress.toLowerCase(), a]));
     const certMap = new Map(certs.map((c) => [c.participantAddress.toLowerCase(), c]));
 
+    // Katılımcıların doğrulanmış StudentProfile kayıtlarını sorgula
+    const participantWallets = indexedRegs.map((r) => r.participantAddress.toLowerCase());
+    let profileMap = new Map();
+    if (prisma.studentProfile && participantWallets.length > 0) {
+      try {
+        const profiles = await prisma.studentProfile.findMany({
+          where: {
+            walletAddress: { in: participantWallets },
+          },
+          select: {
+            walletAddress: true,
+            displayName: true,
+            department: true,
+            university: true,
+          },
+        });
+        profileMap = new Map(
+          profiles.map((p) => [String(p.walletAddress).toLowerCase(), p])
+        );
+      } catch {
+        // Fallback gracefully if profile lookup is unavailable
+      }
+    }
+
     let participants = indexedRegs.map((reg) => {
       const pAddr = reg.participantAddress.toLowerCase();
       const att = attMap.get(pAddr);
       const cert = certMap.get(pAddr);
+      const profile = profileMap.get(pAddr);
 
       const isAttended = Boolean(att);
       const hasCertificate = Boolean(cert && cert.status === "ACTIVE");
+      const displayName = cert?.displayName || profile?.displayName || null;
+      const hasProfileName = Boolean(displayName && displayName.trim().length > 0);
 
       return {
         walletAddress: ethers.getAddress(reg.participantAddress),
         participantAddress: ethers.getAddress(reg.participantAddress),
         normalizedAddress: pAddr,
+        displayName,
+        hasProfileName,
+        recipientName: cert?.displayName || displayName || null,
+        department: profile?.department || null,
+        university: profile?.university || null,
         registrationTxHash: reg.transactionHash,
         registrationBlockNumber: Number(reg.blockNumber),
         registeredAt: reg.createdAt.toISOString(),
@@ -488,7 +520,8 @@ export function createOrganizerAnalyticsService({
         (p) =>
           p.normalizedAddress.includes(q) ||
           p.participantAddress.toLowerCase().includes(q) ||
-          (p.certificateId && p.certificateId.toLowerCase().includes(q))
+          (p.certificateId && p.certificateId.toLowerCase().includes(q)) ||
+          (p.displayName && p.displayName.toLowerCase().includes(q))
       );
     }
 
@@ -613,6 +646,27 @@ export function createOrganizerAnalyticsService({
     const attMap = new Map(indexedAtts.map((a) => [a.participantAddress.toLowerCase(), a]));
     const certMap = new Map(certs.map((c) => [c.participantAddress.toLowerCase(), c]));
 
+    const participantWallets = indexedRegs.map((r) => r.participantAddress.toLowerCase());
+    let profileMap = new Map();
+    if (prisma.studentProfile && participantWallets.length > 0) {
+      try {
+        const profiles = await prisma.studentProfile.findMany({
+          where: {
+            walletAddress: { in: participantWallets },
+          },
+          select: {
+            walletAddress: true,
+            displayName: true,
+          },
+        });
+        profileMap = new Map(
+          profiles.map((p) => [String(p.walletAddress).toLowerCase(), p])
+        );
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
     const lines = [];
     // Excel'in Türkçe karakterleri düzgün tanıması için UTF-8 BOM
     const BOM = "\uFEFF";
@@ -636,6 +690,7 @@ export function createOrganizerAnalyticsService({
       lines.push(
         buildCsvRow([
           "Sira",
+          "Katilimci Ad Soyad",
           "Katilimci Cuzdan Adresi",
           "Kayit Durumu",
           "Kayit Tarihi",
@@ -652,10 +707,13 @@ export function createOrganizerAnalyticsService({
         const pAddr = reg.participantAddress.toLowerCase();
         const att = attMap.get(pAddr);
         const cert = certMap.get(pAddr);
+        const prof = profileMap.get(pAddr);
+        const recipientName = cert?.displayName || prof?.displayName || "";
 
         lines.push(
           buildCsvRow([
             idx + 1,
+            recipientName,
             ethers.getAddress(reg.participantAddress),
             "Kayitli",
             reg.createdAt.toISOString(),

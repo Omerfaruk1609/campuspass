@@ -80,6 +80,16 @@ export function createCommunityController({ communityService }) {
     }
   }
 
+  async function getManageableCommunities(req, res, next) {
+    try {
+      const walletAddress = req.session.walletAddress;
+      const result = await communityService.getManageableCommunities(walletAddress);
+      res.json({ success: true, data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async function getCommunityMembers(req, res, next) {
     try {
       const { idOrSlug } = req.params;
@@ -239,6 +249,7 @@ export function createCommunityController({ communityService }) {
     joinCommunity,
     leaveCommunity,
     getUserCommunities,
+    getManageableCommunities,
     getCommunityMembers,
     getCommunityApplications,
     approveApplication,

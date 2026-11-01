@@ -206,20 +206,39 @@ npm run test:postgres
 
 ---
 
-## 6. Kalan Manuel Doğrulama Adımları (Short Manual Test Sequence)
+## 7. SIWE Doğrulaması Sonrası Manuel Test Bulguları ve Çözümleri (1 Kasım 2026)
 
-Otomasyon testleri eksiksiz geçmiştir. Tarayıcı ve MetaMask ortamında sırayla şu test adımları gerçekleştirilmelidir:
+SIWE (MetaMask imza + oturum) akışının manuel testte hatasız çalıştığının doğrulanmasının ardından tespit edilen 5 bulgu ve eksik iş akışı `feature/phase-15-notifications` dalında giderilmiştir:
 
-1. **Ana Sayfa Etkinlik Listesi:**
-   - Tarayıcıda `http://localhost:5173` açılır.
-   - Ana sayfadaki 3 etkinliğin ("Monad Blokzincir Hackathonu", "Web3 AI Ajanları Atölyesi", "Sıfır Bilgi İspatları Semineri") Monad Testnet'ten hatasız yüklendiği ve "sözleşme kodu bulunamadı" uyarısının çıkmadığı görülür.
-2. **MetaMask Cüzdan Bağlantısı:**
-   - Sağ üstteki "Cüzdanı Bağla" butonuna basılır ve MetaMask'ta Monad Testnet (10143) seçilerek bağlanılır.
-   - Navbar'da cüzdan adresinin kısaltılmış hali (`0x...`) ve yeşil testnet rozeti görüntülenir.
-3. **Rotalar Arası Gezinme:**
-   - Navbar'dan sırasıyla `Öğrenci Paneli` (`/profile`), `Organizatör` (`/organizer`) ve bir etkinliğin detayına (`/events/1`) tıklanır.
-   - Sayfalarda cüzdanın bağlı kalmaya devam ettiği, zamansız "Cüzdan Bağla" flaşlaması yaşanmadığı doğrulanır.
-4. **Organizatör SIWE Girişi:**
-   - `/organizer` rotasında SIWE imza butonu tıklandığında MetaMask popup'ının açıldığı, imza onaylandıktan sonra sayfa yenilenmeden dashboard verilerinin yüklendiği görülür.
-5. **Cüzdan Değişimi ve Çıkış:**
-   - MetaMask'tan farklı bir hesaba geçildiğinde veya "Çıkış Yap" dendiğinde bildirim sayacının sıfırlandığı ve önceki oturuma ait hiçbir verinin kalmadığı gözlemlenir.
+### 7.1. Organizatör Paneli `onCreateEventClick is not defined` Çalışma Zamanı Hatası
+- **Kök Neden:** `src/pages/OrganizerDashboardPage.jsx` bileşeninde önceki refaktör sırasında `handleCreate` ve `handleSelectEvent` fonksiyonları tanımlanmış, ancak JSX içindeki 4 olay bağlamasında (`lines 310, 475, 480, 589`) tanımsız `onCreateEventClick` ve `onSelectEvent` referansları bırakılmıştı. Benzer şekilde `src/pages/OrganizerEventAnalyticsPage.jsx` içinde `handleBack` tanımlandığı halde `onBack` referansları (`lines 246, 259`) kalmıştı.
+- **Çözüm:** `const onCreateEventClick = props.onCreateEventClick || handleCreate;`, `const onSelectEvent = props.onSelectEvent || handleSelectEvent;` ve `const onBack = handleBack;` bağlamaları eklendi; `handleCreate` aksiyonunun `/events?create=1` rotasına yönlendirerek oluşturma formunu otomatik açması sağlandı.
+
+### 7.2. Organizatör Topluluk Seçimi ve Sunucu Yetkilendirme Kuralları
+- **Kural Seti:**
+  1. Etkinlik oluşturma (`HomePage.jsx`) ve düzenleme (`EventPage.jsx`) formlarındaki "Düzenleyen Topluluk / Kulüp" alanı serbest metin (`<input type="text">`) olmaktan çıkarılıp yalnızca bağlı cüzdanın yönetici yetkisine sahip olduğu kayıtlı toplulukları listeleyen kontrollü `<select>` bileşenine dönüştürüldü (`GET /api/communities/manageable`).
+  2. Yalnızca `status === "ACTIVE"` olan bir toplulukta `status === "ACTIVE"` üyeliğe ve `OWNER` veya `ADMIN` rolüne sahip cüzdanlar o topluluk adına etkinlik oluşturabilir/güncelleyebilir.
+  3. Yükleniyor, SIWE oturumu gerekli, yetkili topluluk yok (`/communities` yönlendirmeli) ve yetkili topluluk seçimi durumları açıkça ayrıştırıldı.
+  4. Sunucu (`resolveAndAuthorizeEventCommunity` — `server/src/services/eventService.js`), gönderilen `communityId` ve SIWE oturum cüzdanının `OWNER`/`ADMIN` yetkisini bağımsız doğrular (`403 COMMUNITY_UNAUTHORIZED`, `404 COMMUNITY_NOT_FOUND`, `400 COMMUNITY_SELECTION_REQUIRED`) ve istemcinin gönderdiği topluluk adını yok sayarak doğrudan veritabanındaki resmi topluluk adını kaydeder.
+
+### 7.3. Öğrenci Paneli (`StudentProfile`) Kayıt Görünürlüğü ve İzolasyon
+- **Kök Neden:** `StudentProfile.jsx` yalnızca tarayıcı RPC üzerinden `fetchStudentProfileData` çağırıyor, bu fonksiyon ise önce `queryContractEventsChunked` ile 5.000 blokluk `eth_getLogs` taraması yaparak Monad Testnet'in 100 blokluk sınırına takılıyor ve `GET /api/students/:walletAddress/events` uç noktasını hiç sorgulamıyordu.
+- **Çözüm:**
+  1. `src/utils/studentProfile.js` içinde `queryContractEventsChunked` varsayılanı 90 bloğa düşürüldü ve log taraması yalnızca `contract.registered(id, wallet)` ile kayıtlı etkinlik bulunduktan sonra çalışacak şekilde yeniden sıralandı.
+  2. `StudentProfile.jsx`, hem `GET /api/students/:walletAddress/events` (`fetchStudentEventsFromBackend`) hem de canlı zincir (`fetchStudentProfileData`) verisini birleştirerek etkinlik başlığı, tarih/saat/konum, kayıt durumu (`Kayıtlı ✓`), katılım/QR doğrulama durumu ve sertifika durumunu (`🎓 Sertifika Verildi` / `🎓 Sertifika Alınabilir`) gösterir hale getirildi.
+  3. Kayıt işlemi onaylandığında `POST /api/events/:eventId/registrations/sync` ile `IndexedRegistration` kaydı anında senkronize edilir. Cüzdan izolasyonu hem sunucu sorgularında hem istemci durumunda (`normalizedWallet`) katı biçimde korunur.
+
+### 7.4. Katılım QR Güvenliği ve Tehdit Modeli
+- **Tehdit Modeli ve Uygulama Noktaları:**
+  1. **Arayüz Ayrımı (`EventPage.jsx`):** Öğrenci görünümü (`!isOrganizer && isRegistered && !isAttended`) yalnızca imzalı QR kodunu oluşturup gösterir; tarama/doğrulama arayüzü yalnızca organizatör görünümünde (`isOrganizer`) yer alır.
+  2. **Self-Attendance / Self-Scan Engeli (`verifySignedQrTicket` & `POST /api/events/:eventId/attendance/verify`):** Öğrencinin veya organizatörün kendi QR kodunu/katılımını doğrulaması (`verifier === participant` veya `participant === event.organizer`) hem istemci doğrulamasında hem de doğrudan API isteklerinde `403 SELF_ATTENDANCE_FORBIDDEN` ile reddedilir.
+  3. **Yetki Denetimi:** Doğrulayıcının SIWE oturumu ve etkinliğin blokzincir organizatörü veya bağlı topluluğun aktif `OWNER`/`ADMIN` yöneticisi olduğu sunucuda bağımsız doğrulanır (`403 ATTENDANCE_VERIFIER_UNAUTHORIZED`).
+  4. **Replay, TTL ve Cross-Event Koruması:** EIP-191 imzası, `chainId`, `contractAddress`, `eventId` (`400 QR_CROSS_EVENT_REJECTED`), `TTL <= 180s` (`400 QR_EXPIRED_OR_INVALID_TTL`) ve tek kullanımlık nonce (`409 QR_NONCE_REPLAY_DETECTED`) sunucuda zorunlu tutulur.
+  5. **Kayıt vs. Katılım Ayrımı:** Hem API yanıtında (`registrationExists` vs `attendanceVerified`) hem de doğrulama raporunda (`Kayıt Durumu: Kayıtlı ✓` vs `Katılım Durumu: Doğrulandı ✓ / Onay Bekliyor`) iki durum net biçimde ayrılmıştır.
+
+### 7.5. Geçerli Katılım Sonrası Sertifika Üretimi
+- **Semantik ve Akış:**
+  1. Sertifika yalnızca doğrulanmış katılım (`AttendanceMarked` / `IndexedAttendance`) sonrasında üretilebilir (`403 ATTENDANCE_NOT_VERIFIED_ONCHAIN`).
+  2. Sertifika hem katılımcı öğrenci tarafından (`StudentProfile.jsx`) hem de yetkili organizatör/topluluk yöneticisi tarafından (`OrganizerEventAnalyticsPage.jsx` katılımcı tablosundaki `"🎓 Sertifika Ver"` butonuyla) ilgili öğrenci ve etkinliğe bağlı olarak üretilebilir; yetkisiz üçüncü kişiler `403 CERTIFICATE_WALLET_MISMATCH` ile reddedilir.
+  3. Mükerrer üretim veritabanı benzersizlik kısıtı ve idempotent servis mantığıyla önlenir (`200 OK`, `created: false`).
+  4. Yeni sertifika üretildiğinde Faz 15 bildirim servisi üzerinden katılımcıya `CERTIFICATE_ISSUED` bildirimi gönderilir ve öğrenci paneli ile `/verify/:certificateId` doğrulama sayfası senkronize çalışır.

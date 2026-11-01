@@ -130,7 +130,18 @@ function matchesWhere(row, where = {}) {
       if (actual.toLowerCase() !== expected.toLowerCase()) return false;
     } else if (expected !== null && typeof expected === "object" && !(expected instanceof Date)) {
       if ("in" in expected && Array.isArray(expected.in)) {
-        if (!expected.in.includes(actual)) return false;
+        const matches = expected.in.some((item) => {
+          if (
+            typeof item === "string" &&
+            typeof actual === "string" &&
+            item.startsWith("0x") &&
+            actual.startsWith("0x")
+          ) {
+            return item.toLowerCase() === actual.toLowerCase();
+          }
+          return item === actual;
+        });
+        if (!matches) return false;
       }
       if ("equals" in expected) {
         if (actual !== expected.equals) return false;

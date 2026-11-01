@@ -146,6 +146,7 @@ export function createStudentService({
       indexedAtts,
       allMetadataRows,
       allAttendanceRows,
+      studentCerts,
     ] = await Promise.all([
       blockchainService.getAllOnChainEvents(),
       prisma.indexedRegistration.findMany({
@@ -174,6 +175,15 @@ export function createStudentService({
           contractAddress: contractAddressNormalized,
         },
       }),
+      prisma.attendanceCertificate
+        ? prisma.attendanceCertificate.findMany({
+            where: {
+              chainId,
+              contractAddress: contractAddressNormalized,
+              participantAddress: normalizedAddress,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     const regTxByEventId = new Map();
@@ -184,6 +194,11 @@ export function createStudentService({
     const attTxByEventId = new Map();
     for (const a of indexedAtts) {
       attTxByEventId.set(Number(a.eventId), a.transactionHash);
+    }
+
+    const certByEventId = new Map();
+    for (const c of studentCerts) {
+      certByEventId.set(Number(c.eventId), c);
     }
 
     const metadataByEventId = new Map();
@@ -218,12 +233,24 @@ export function createStudentService({
           nowMs
         );
 
+        const cert = certByEventId.get(event.id) || null;
+        const hasActiveCertificate = Boolean(cert && cert.status === "ACTIVE");
+
         const enriched = {
           ...merged,
           isRegistered,
           isAttended,
+          registrationStatus: isRegistered ? "REGISTERED" : "NOT_REGISTERED",
+          attendanceVerificationStatus: isAttended ? "VERIFIED" : "PENDING",
           registrationTxHash: regTxByEventId.get(event.id) || null,
           attendanceTxHash: attTxByEventId.get(event.id) || null,
+          hasCertificate: hasActiveCertificate,
+          certificateId: cert ? cert.certificateId : null,
+          certificateStatus: cert
+            ? cert.status
+            : isAttended
+              ? "ELIGIBLE"
+              : "NOT_ELIGIBLE",
         };
         enriched.attendanceState = classifyStudentAttendanceState(enriched);
         return enriched;

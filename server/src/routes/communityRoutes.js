@@ -12,6 +12,11 @@ export function createCommunityRoutes({
 
   // Kullanıcının Üyelikleri (SIWE oturumu gerektirir) — /:idOrSlug'dan önce tanımlanmalıdır
   router.get("/me", requireAuthSession, communityController.getUserCommunities);
+  router.get(
+    "/manageable",
+    requireAuthSession,
+    communityController.getManageableCommunities
+  );
 
   // Topluluk Oluşturma (SIWE oturumu gerektirir)
   router.post("/", requireAuthSession, communityController.createCommunity);

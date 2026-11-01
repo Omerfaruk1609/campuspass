@@ -20,6 +20,7 @@ import {
   ensureStudentSiweSession,
   fetchEventsMetadataFromBackend,
   fetchStudentAccountProfileFromBackend,
+  fetchStudentEventsFromBackend,
   fetchMyCertificatesFromBackend,
   fetchMyCommunitiesFromBackend,
   fetchWalletCertificatesFromBackend,
@@ -33,7 +34,9 @@ import {
 } from "../utils/certificatePdf";
 import {
   ATTENDANCE_STATE,
+  buildStudentTimeline,
   calculateStudentStats,
+  classifyStudentAttendanceState,
   fetchStudentProfileData,
 } from "../utils/studentProfile";
 import { generateQrMatrix } from "../utils/qrMatrix";
@@ -141,7 +144,6 @@ export default function StudentProfile(props) {
   const [loadingCertificates, setLoadingCertificates] = useState(false);
   const [certBanner, setCertBanner] = useState(null);
   const [issuingEventId, setIssuingEventId] = useState(null);
-  const [optionalDisplayName, setOptionalDisplayName] = useState("");
   const [selectedCertificateModal, setSelectedCertificateModal] = useState(null);
   const [copiedCertId, setCopiedCertId] = useState(null);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -235,13 +237,19 @@ export default function StudentProfile(props) {
     [account, loadMyCommunities]
   );
 
+  const contextEvents = context?.events;
+  const contextAccount = context?.account;
+
   const fetchAndSetProfile = useCallback(
     async (targetAccount) => {
-      if (!targetAccount) {
+      if (!targetAccount || !ethers.isAddress(targetAccount)) {
         setProfile(EMPTY_PROFILE);
         setCertificates([]);
+        setLoading(false);
         return;
       }
+
+      const normalizedTarget = ethers.getAddress(targetAccount);
 
       try {
         try {
@@ -254,22 +262,140 @@ export default function StudentProfile(props) {
         }
 
         const contract = getReadOnlyContract();
-        const [data, certList] = await Promise.all([
+        const [onChainDataResult, backendStudentResult, certList] = await Promise.all([
           fetchStudentProfileData({
-            walletAddress: targetAccount,
+            walletAddress: normalizedTarget,
             contract,
             chainId: MONAD_CHAIN_ID,
             contractAddress: CONTRACT_ADDRESS,
-          }),
-          loadCertificatesForAccount(targetAccount),
+          }).catch((err) => ({ __error: err })),
+          fetchStudentEventsFromBackend(normalizedTarget).catch(() => null),
+          loadCertificatesForAccount(normalizedTarget),
           loadMyCommunities(),
         ]);
+
+        const onChainFailed = Boolean(onChainDataResult && onChainDataResult.__error);
+        const onChainProfile = onChainFailed ? null : onChainDataResult;
+
+        // Kayıtlı etkinlikleri cüzdan izolasyonunu koruyarak birleştir
+        const mergedByEventId = new Map();
+
+        if (Array.isArray(backendStudentResult?.registeredEvents)) {
+          for (const ev of backendStudentResult.registeredEvents) {
+            if (ev && ev.id && ev.isRegistered !== false) {
+              mergedByEventId.set(Number(ev.id), {
+                ...ev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended),
+              });
+            }
+          }
+        }
+
+        if (Array.isArray(onChainProfile?.registeredEvents)) {
+          for (const ev of onChainProfile.registeredEvents) {
+            if (ev && ev.id && ev.isRegistered !== false) {
+              const prev = mergedByEventId.get(Number(ev.id)) || {};
+              mergedByEventId.set(Number(ev.id), {
+                ...prev,
+                ...ev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended || prev.isAttended),
+                registrationTxHash:
+                  ev.registrationTxHash || prev.registrationTxHash || null,
+                attendanceTxHash:
+                  ev.attendanceTxHash || prev.attendanceTxHash || null,
+                hasCertificate: Boolean(ev.hasCertificate || prev.hasCertificate),
+                certificateId: ev.certificateId || prev.certificateId || null,
+              });
+            }
+          }
+        }
+
+        // Eğer aktif bağlamdaki cüzdan aynıysa AppContext içindeki doğrulanmış kayıtları da yedek olarak dahil et
+        if (
+          contextAccount &&
+          contextAccount.toLowerCase() === normalizedTarget.toLowerCase() &&
+          Array.isArray(contextEvents)
+        ) {
+          for (const ev of contextEvents) {
+            if (ev && ev.id && ev.isRegistered === true) {
+              const prev = mergedByEventId.get(Number(ev.id)) || {};
+              mergedByEventId.set(Number(ev.id), {
+                ...ev,
+                ...prev,
+                isRegistered: true,
+                isAttended: Boolean(ev.isAttended || prev.isAttended),
+              });
+            }
+          }
+        }
+
+        if (
+          onChainFailed &&
+          !backendStudentResult &&
+          mergedByEventId.size === 0
+        ) {
+          throw onChainDataResult.__error;
+        }
+
+        const certMap = new Map(
+          (Array.isArray(certList) ? certList : []).map((c) => [
+            Number(c.eventId),
+            c,
+          ])
+        );
+
+        const combinedRegistered = Array.from(mergedByEventId.values()).map(
+          (ev) => {
+            const cert = certMap.get(Number(ev.id)) || null;
+            const enriched = {
+              ...ev,
+              isRegistered: true,
+              isAttended: Boolean(ev.isAttended),
+              hasCertificate: Boolean(
+                ev.hasCertificate || (cert && cert.status === "ACTIVE")
+              ),
+              certificateId: cert?.certificateId || ev.certificateId || null,
+            };
+            enriched.attendanceState = classifyStudentAttendanceState(enriched);
+            return enriched;
+          }
+        );
+
+        combinedRegistered.sort(
+          (a, b) => (Date.parse(b.startAt) || 0) - (Date.parse(a.startAt) || 0)
+        );
+
+        const upcomingEvents = combinedRegistered.filter(
+          (ev) => ev.status === "upcoming" || ev.status === "ongoing"
+        );
+        const pastEvents = combinedRegistered.filter(
+          (ev) => ev.status === "completed" || ev.status === "cancelled"
+        );
+        const attendedEvents = combinedRegistered.filter(
+          (ev) => ev.isAttended === true
+        );
+
+        const finalProfile = {
+          walletAddress: normalizedTarget,
+          registeredEvents: combinedRegistered,
+          upcomingEvents,
+          pastEvents,
+          attendedEvents,
+          stats: calculateStudentStats(combinedRegistered),
+          timeline: buildStudentTimeline(combinedRegistered, {
+            direction: "DESC",
+          }),
+          error: null,
+        };
+
         let profileDetails = null;
         try {
-          profileDetails = await fetchStudentAccountProfileFromBackend(targetAccount);
+          profileDetails = await fetchStudentAccountProfileFromBackend(normalizedTarget);
         } catch {}
         setUserProfile(profileDetails);
-        setProfile(data);
+        setProfile(finalProfile);
         if (Array.isArray(certList)) {
           setCertificates(certList);
         }
@@ -284,7 +410,7 @@ export default function StudentProfile(props) {
         setLoading(false);
       }
     },
-    [loadCertificatesForAccount, loadMyCommunities]
+    [loadCertificatesForAccount, loadMyCommunities, contextAccount, contextEvents]
   );
 
   async function handleManualRefresh() {
@@ -305,6 +431,17 @@ export default function StudentProfile(props) {
   async function handleIssueCertificate(eventId) {
     if (!account) return;
     setCertBanner(null);
+
+    const profileName = userProfile?.displayName?.trim() || "";
+    if (!profileName) {
+      setCertBanner({
+        type: "warning",
+        message:
+          "Sertifikanızda adınızın yer alabilmesi için lütfen önce Hesap Ayarları (/settings) sayfasından Ad ve Soyad bilgilerinizi kaydedin.",
+      });
+      return;
+    }
+
     setIssuingEventId(eventId);
 
     try {
@@ -326,7 +463,7 @@ export default function StudentProfile(props) {
       const result = await issueCertificateOnBackend({
         eventId,
         walletAddress: account,
-        displayName: optionalDisplayName.trim(),
+        requireProfileName: true,
       });
 
       await loadCertificatesForAccount(account);
@@ -336,7 +473,7 @@ export default function StudentProfile(props) {
         type: "success",
         message: result.idempotent
           ? `Etkinlik #${eventId} için mevcut doğrulanmış sertifikanız yüklendi (${result.certificate.certificateId}).`
-          : `Etkinlik #${eventId} için blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu! (${result.certificate.certificateId})`,
+          : `Etkinlik #${eventId} için "${result.certificate.recipientName || profileName}" adına blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu! (${result.certificate.certificateId})`,
       });
     } catch (err) {
       setCertBanner({
@@ -546,7 +683,7 @@ export default function StudentProfile(props) {
 
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                   <h1 className="font-headline-md" style={{ margin: 0, color: "var(--stitch-on-surface)" }}>
-                    {userProfile?.displayName || account}
+                    {userProfile?.displayName || `Öğrenci Hesabı (${shortenAddress(account)})`}
                   </h1>
                   <button
                     type="button"
@@ -560,6 +697,25 @@ export default function StudentProfile(props) {
                     {copiedWallet ? "Kopyalandı ✓" : "Adresi Kopyala"}
                   </button>
                 </div>
+
+                {!userProfile?.displayName && (
+                  <div
+                    style={{
+                      marginTop: "0.5rem",
+                      fontSize: "0.82rem",
+                      color: "#fbbf24",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span>⚠️ Profil Adı Tanımlanmamış: Sertifikalarınızda adınızın yer alması için</span>
+                    <Link to="/settings" style={{ color: "#60a5fa", textDecoration: "underline" }}>
+                      Hesap Ayarlarından Profilinizi Tamamlayın →
+                    </Link>
+                  </div>
+                )}
 
                 {userProfile?.bio && (
                   <p style={{ margin: "0.4rem 0 0 0", fontSize: "0.875rem", color: "var(--stitch-outline)", maxWidth: "600px" }}>
@@ -850,6 +1006,7 @@ export default function StudentProfile(props) {
                           (existingCert.status === "ACTIVE" || !existingCert.status)
                             ? existingCert
                             : null;
+                        const hasCertBadge = Boolean(activeCert || ev.hasCertificate);
 
                         return (
                           <article
@@ -867,11 +1024,20 @@ export default function StudentProfile(props) {
                                 <span className="font-label-mono text-outline">#{ev.id}</span>
                                 <span className="font-label-badge text-primary">{ev.community}</span>
                               </div>
-                              <div style={{ display: "flex", gap: "0.35rem" }}>
+                              <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                                 <span className="stitch-badge stitch-badge-open">Kayıtlı ✓</span>
                                 <span className={`stitch-badge ${isVerifiedAttended ? "stitch-badge-completed" : "stitch-badge-testnet"}`}>
                                   {attState?.label || "Bekleniyor"}
                                 </span>
+                                {hasCertBadge ? (
+                                  <span className="stitch-badge stitch-badge-verified">
+                                    🎓 Sertifika Verildi
+                                  </span>
+                                ) : isVerifiedAttended ? (
+                                  <span className="stitch-badge stitch-badge-testnet">
+                                    🎓 Sertifika Alınabilir
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
 
@@ -941,21 +1107,75 @@ export default function StudentProfile(props) {
                     </div>
 
                     {attendedEvents.length > 0 && (
-                      <div style={{ marginTop: "1rem" }}>
-                        <label className="font-label-badge text-outline" htmlFor="cert-name-input">
-                          İsteğe Bağlı Sertifika Gösterim Adı (Zorunlu Değil):
-                        </label>
-                        <input
-                          id="cert-name-input"
-                          type="text"
-                          maxLength={80}
-                          className="stitch-input"
-                          value={optionalDisplayName}
-                          onChange={(e) => setOptionalDisplayName(e.target.value)}
-                          placeholder="Boş bırakırsanız yalnızca cüzdan adresiniz gösterilir"
-                          style={{ marginTop: "0.35rem" }}
-                        />
-                      </div>
+                      userProfile?.displayName?.trim() ? (
+                        <div
+                          className="stitch-card"
+                          style={{
+                            marginTop: "1rem",
+                            padding: "0.85rem 1.15rem",
+                            background: "rgba(16, 185, 129, 0.08)",
+                            border: "1px solid rgba(16, 185, 129, 0.25)",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span className="material-symbols-outlined" style={{ color: "#34d399", fontSize: "20px" }}>
+                                verified_user
+                              </span>
+                              <span className="font-body-sm" style={{ color: "var(--stitch-on-surface)" }}>
+                                Profilde Kayıtlı Katılımcı Adı: <strong style={{ color: "#34d399" }}>{userProfile.displayName.trim()}</strong>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="stitch-btn-secondary"
+                              onClick={() => navigate("/settings")}
+                              style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+                            >
+                              Adı Düzenle
+                            </button>
+                          </div>
+                          <p className="font-body-xs text-on-surface-variant" style={{ margin: "0.35rem 0 0" }}>
+                            Sertifikanız üretildiğinde bu profil adı kayda kalıcı olarak mühürlenir (snapshot) ve cüzdanınızla bağlanır. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, resmî kimlik doğrulaması yerine geçmez.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className="stitch-card"
+                          style={{
+                            marginTop: "1rem",
+                            padding: "0.85rem 1.15rem",
+                            background: "rgba(245, 158, 11, 0.08)",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span className="material-symbols-outlined" style={{ color: "#fbbf24", fontSize: "20px" }}>
+                                warning
+                              </span>
+                              <div>
+                                <span className="font-body-sm" style={{ color: "var(--stitch-on-surface)", fontWeight: 600 }}>
+                                  Profil Adınız Eksik
+                                </span>
+                                <p className="font-body-xs text-on-surface-variant" style={{ margin: "0.15rem 0 0" }}>
+                                  Sertifikanızın adınıza düzenlenebilmesi için profil bilgilerinizi tamamlamalısınız.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="stitch-btn-primary"
+                              onClick={() => navigate("/settings")}
+                              style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                            >
+                              Profili Tamamla (/settings)
+                            </button>
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
 

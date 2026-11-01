@@ -32,5 +32,18 @@ export function createEventRoutes({ eventController, requireOrganizerSession }) 
     eventController.reactivateEvent(req, res)
   );
 
+  // Yoklama / QR Doğrulama (SIWE + Organizatör/Topluluk Yetkisi + Self-Attendance Koruması)
+  router.post("/:eventId/attendance/verify", requireOrganizerSession, (req, res) =>
+    eventController.verifyAttendance(req, res)
+  );
+  router.post("/:eventId/attendance/verify-qr", requireOrganizerSession, (req, res) =>
+    eventController.verifyAttendance(req, res)
+  );
+
+  // Öğrenci Zincir Üstü Kayıt Senkronizasyonu
+  router.post("/:eventId/registrations/sync", (req, res) =>
+    eventController.syncRegistration(req, res)
+  );
+
   return router;
 }

@@ -13,6 +13,7 @@ import {
   fetchOrganizerEventAnalyticsFromBackend,
   fetchOrganizerEventParticipantsFromBackend,
   getActiveAuthState,
+  issueCertificateOnBackend,
 } from "../utils/apiClient";
 import { formatTurkeyDateOnly, formatTurkeyDateTime } from "../utils/eventMetadata";
 
@@ -24,6 +25,7 @@ export default function OrganizerEventAnalyticsPage(props) {
   const account = props.account ?? context?.account ?? null;
   const eventId = props.eventId ?? (params.eventId ? Number(params.eventId) : null);
   const handleBack = props.onBack || (() => (navigate ? navigate("/organizer") : null));
+  const onBack = handleBack;
   const handleOpenEvent = props.onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -181,6 +183,54 @@ export default function OrganizerEventAnalyticsPage(props) {
       await navigator.clipboard.writeText(addr);
       setCopiedAddress(addr);
       setTimeout(() => setCopiedAddress(null), 2000);
+    }
+  }
+
+  const [issuingCertForWallet, setIssuingCertForWallet] = useState(null);
+  const [certActionBanner, setCertActionBanner] = useState(null);
+
+  async function handleIssueCertificateForParticipant(participantAddress) {
+    if (!eventId || !participantAddress) return;
+    setIssuingCertForWallet(participantAddress);
+    setCertActionBanner(null);
+    try {
+      const isAuthed = await ensureSiwe();
+      if (!isAuthed) {
+        setCertActionBanner({
+          type: "error",
+          text: "Sertifika oluşturmak için SIWE organizatör oturumu gereklidir.",
+        });
+        return;
+      }
+
+      const res = await issueCertificateOnBackend({
+        eventId: Number(eventId),
+        walletAddress: participantAddress,
+        requireProfileName: true,
+      });
+
+      const certId = res?.data?.certificateId || "";
+      const recipientDisplayName = res?.data?.recipientName || res?.data?.displayName;
+      const targetLabel = recipientDisplayName
+        ? `"${recipientDisplayName}" (${shortenAddress(participantAddress)})`
+        : shortenAddress(participantAddress);
+
+      setCertActionBanner({
+        type: "success",
+        text: res?.idempotent
+          ? `${targetLabel} için mevcut sertifika doğrulandı (${certId}).`
+          : `${targetLabel} için dijital katılım sertifikası başarıyla verildi (${certId}).`,
+      });
+
+      await loadEventAnalytics();
+      await loadParticipants(pagination.page);
+    } catch (err) {
+      setCertActionBanner({
+        type: "error",
+        text: err.message || "Sertifika oluşturulurken hata oluştu.",
+      });
+    } finally {
+      setIssuingCertForWallet(null);
     }
   }
 
@@ -401,7 +451,7 @@ export default function OrganizerEventAnalyticsPage(props) {
             <div className="search-box">
               <input
                 type="text"
-                placeholder="Cüzdan adresi ile ara (0x...)"
+                placeholder="Cüzdan adresi veya isim ile ara..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="search-input"
@@ -447,6 +497,15 @@ export default function OrganizerEventAnalyticsPage(props) {
           </div>
         </div>
 
+        {certActionBanner && (
+          <div
+            className={`inline-alert ${certActionBanner.type === "error" ? "error" : "success"}`}
+            style={{ marginTop: "0.85rem" }}
+          >
+            {certActionBanner.text}
+          </div>
+        )}
+
         {/* Katılımcı Tablosu */}
         {loadingParticipants ? (
           <div className="empty-state">
@@ -461,7 +520,7 @@ export default function OrganizerEventAnalyticsPage(props) {
             <table className="analytics-table">
               <thead>
                 <tr>
-                  <th>Katılımcı Cüzdan</th>
+                  <th>Katılımcı</th>
                   <th>Kayıt Zamanı (TSİ)</th>
                   <th>Kayıt Onayı</th>
                   <th>Katılım Durumu</th>
@@ -472,27 +531,32 @@ export default function OrganizerEventAnalyticsPage(props) {
                 {participants.map((p) => (
                   <tr key={p.walletAddress}>
                     <td>
-                      <div className="participant-wallet-cell">
-                        <span className="monospace" title={p.walletAddress}>
-                          {shortenAddress(p.walletAddress)}
-                        </span>
-                        <button
-                          type="button"
-                          className="copy-mini-btn"
-                          title="Cüzdan adresini kopyala"
-                          onClick={() => handleCopyAddress(p.walletAddress)}
-                        >
-                          {copiedAddress === p.walletAddress ? "✓" : "📋"}
-                        </button>
-                        <a
-                          href={`${MONAD_EXPLORER_URL}/address/${p.walletAddress}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="explorer-mini-link"
-                          title="Monad Explorer'da gör"
-                        >
-                          ↗
-                        </a>
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--stitch-on-surface, #f1f5f9)" }}>
+                          {p.displayName || "Profilde Kayıtlı Ad Yok"}
+                        </div>
+                        <div className="participant-wallet-cell" style={{ marginTop: "2px" }}>
+                          <span className="monospace" title={p.walletAddress}>
+                            {shortenAddress(p.walletAddress)}
+                          </span>
+                          <button
+                            type="button"
+                            className="copy-mini-btn"
+                            title="Cüzdan adresini kopyala"
+                            onClick={() => handleCopyAddress(p.walletAddress)}
+                          >
+                            {copiedAddress === p.walletAddress ? "✓" : "📋"}
+                          </button>
+                          <a
+                            href={`${MONAD_EXPLORER_URL}/address/${p.walletAddress}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="explorer-mini-link"
+                            title="Monad Explorer'da gör"
+                          >
+                            ↗
+                          </a>
+                        </div>
                       </div>
                     </td>
                     <td>
@@ -544,8 +608,29 @@ export default function OrganizerEventAnalyticsPage(props) {
                             {p.certificateId ? p.certificateId.slice(-8) : ""}
                           </span>
                         </div>
+                      ) : p.isAttended ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={issuingCertForWallet === p.walletAddress}
+                            onClick={() => handleIssueCertificateForParticipant(p.walletAddress)}
+                            title={p.displayName ? `"${p.displayName}" adına sertifika oluştur` : "Katılımcının profilinde ad ve soyad tanımlı olmalıdır"}
+                          >
+                            {issuingCertForWallet === p.walletAddress
+                              ? "Veriliyor..."
+                              : "🎓 Sertifika Ver"}
+                          </button>
+                          {!p.displayName && (
+                            <span style={{ fontSize: "0.72rem", color: "#f59e0b" }}>
+                              ⚠️ Profil Adı Eksik
+                            </span>
+                          )}
+                        </div>
                       ) : (
-                        <span className="status-badge inactive">—</span>
+                        <span className="status-badge inactive" title="Önce katılım doğrulanmalıdır">
+                          Katılım Bekleniyor
+                        </span>
                       )}
                     </td>
                   </tr>

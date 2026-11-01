@@ -160,7 +160,7 @@ export function buildCertificateSvgMarkup(
   const effectiveDisplayName =
     displayNameOverride !== null
       ? String(displayNameOverride || "").trim()
-      : String(certificate.displayName || "").trim();
+      : String(certificate.recipientName || certificate.displayName || "").trim();
 
   const issuedFormatted = formatTurkeyDateTime(
     certificate.issuedAt || new Date().toISOString()
@@ -228,20 +228,28 @@ export function buildCertificateSvgMarkup(
 
   <line x1="220" y1="352" x2="903" y2="352" stroke="#cbd5e1" stroke-width="1"/>
 
-  <!-- Katılımcı Cüzdan Kimliği Kutusu -->
-  <rect x="82" y="370" width="959" height="${effectiveDisplayName ? "102" : "76"}" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
-  <text x="561.5" y="395" text-anchor="middle" fill="#475569" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="12" font-weight="bold" letter-spacing="1.2">
-    DOĞRULANAN KATILIMCI CÜZDAN ADRESİ (BİRİNCİL BLOKZİNCİR KİMLİĞİ)
-  </text>
-  <text x="561.5" y="424" text-anchor="middle" fill="#0b132b" font-family="'Courier New', Courier, monospace" font-size="20" font-weight="bold">
-    ${escapeXml(certificate.participantAddress)}
+  <!-- Sertifika Sahibi / Katılımcı Kimlik Kutusu -->
+  <rect x="82" y="366" width="959" height="106" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="561.5" y="391" text-anchor="middle" fill="#475569" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="bold" letter-spacing="1.5">
+    SERTİFİKA SAHİBİ / DOĞRULANMIŞ KATILIMCI
   </text>
   ${
     effectiveDisplayName
-      ? `<text x="561.5" y="454" text-anchor="middle" fill="#334155" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="bold">
-          Katılımcı Beyanı Gösterim Adı: ${escapeXml(effectiveDisplayName)} <tspan fill="#64748b" font-weight="normal" font-size="12">(Cüzdan sahibi beyanıdır, resmî kimlik doğrulaması değildir)</tspan>
-        </text>`
-      : ""
+      ? `<!-- Birincil Alıcı Kimliği: Doğrulanmış Profil Tam Adı -->
+  <text x="561.5" y="426" text-anchor="middle" fill="#0b132b" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="bold" letter-spacing="0.5">
+    ${escapeXml(effectiveDisplayName)}
+  </text>
+  <!-- İkincil Bağlayıcı Kimlik: Blokzincir Cüzdan Adresi -->
+  <text x="561.5" y="455" text-anchor="middle" fill="#475569" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="12.5">
+    Doğrulanmış Cüzdan Kimliği: <tspan font-family="'Courier New', Courier, monospace" font-weight="bold" fill="#0f172a">${escapeXml(certificate.participantAddress)}</tspan>
+  </text>`
+      : `<!-- İsim Tanımlanmamış Durumda Deliberate Fallback: Cüzdan Adresi -->
+  <text x="561.5" y="425" text-anchor="middle" fill="#0b132b" font-family="'Courier New', Courier, monospace" font-size="20" font-weight="bold">
+    ${escapeXml(certificate.participantAddress)}
+  </text>
+  <text x="561.5" y="452" text-anchor="middle" fill="#64748b" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="12">
+    (Katılımcı profil adı tanımlanmamış • Cüzdan adresi ile doğrulanmıştır)
+  </text>`
   }
 
   <!-- Sol Alt: Zincir Üstü Kanıt & Meta Veriler -->
@@ -322,7 +330,7 @@ export function generateCertificatePdfDocument(
   const effectiveDisplayName =
     displayNameOverride !== null
       ? String(displayNameOverride || "").trim()
-      : String(certificate.displayName || "").trim();
+      : String(certificate.recipientName || certificate.displayName || "").trim();
 
   const issuedFormatted = formatTurkeyDateTime(
     certificate.issuedAt || new Date().toISOString()
@@ -419,29 +427,49 @@ export function generateCertificatePdfDocument(
 
   addText(
     "F1",
-    9.5,
+    9,
     80,
-    333,
+    334,
     [0.278, 0.333, 0.412],
-    "DOGRULANAN KATILIMCI CUZDAN ADRESI (BIRINCIL BLOKZINCIR KIMLIGI):"
-  );
-  addText(
-    "F3",
-    14,
-    80,
-    312,
-    [0.043, 0.075, 0.169],
-    certificate.participantAddress
+    "SERTIFIKA SAHIBI / DOGRULANMIS KATILIMCI:"
   );
 
   if (effectiveDisplayName) {
+    // Birincil Alıcı Adı: Doğrulanmış Profil Tam Adı (F1 Helvetica Bold, 16pt)
+    addText(
+      "F1",
+      16,
+      80,
+      312,
+      [0.043, 0.075, 0.169],
+      normalizePdfText(effectiveDisplayName)
+    );
+    // İkincil Doğrulama Bağlantısı: Cüzdan Kimliği
     addText(
       "F2",
-      9.5,
+      9,
       80,
-      292,
+      293,
       [0.2, 0.25, 0.33],
-      `Katilimci Beyani Gosterim Adi: ${effectiveDisplayName} (Cuzdan sahibi beyanidir, resmi kimlik dogrulamasi degildir)`
+      `Dogrulanmis Cuzdan Kimligi: ${certificate.participantAddress}`
+    );
+  } else {
+    // İsim Tanımlanmamış Durumda Deliberate Fallback: Cüzdan Adresi
+    addText(
+      "F3",
+      13,
+      80,
+      312,
+      [0.043, 0.075, 0.169],
+      certificate.participantAddress
+    );
+    addText(
+      "F2",
+      8.5,
+      80,
+      293,
+      [0.4, 0.45, 0.5],
+      "(Katilimci profil adi tanimlanmamis - Cuzdan adresi ile dogrulanmistir)"
     );
   }
 

@@ -17,6 +17,7 @@ export function createCertificateController({ certificateService }) {
         eventId: body.eventId,
         requestedWalletAddress,
         displayName: body.displayName,
+        requireProfileName: body.requireProfileName,
       });
 
       const statusCode = result.created ? 201 : 200;

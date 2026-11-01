@@ -151,6 +151,7 @@ export function createCertificateService({
   blockchainService,
   signingSecret = env.SESSION_SECRET,
   confirmations = 0,
+  notificationService = null,
 }) {
   const {
     chainId,
@@ -189,6 +190,7 @@ export function createCertificateService({
         : null,
       organizerAddress: checksumOrganizer,
       participantAddress: checksumParticipant,
+      recipientName: row.displayName || null,
       attendanceTxHash: row.attendanceTxHash,
       attendanceBlockNumber: Number(row.attendanceBlockNumber),
       attendanceLogIndex: Number(row.attendanceLogIndex),
@@ -198,13 +200,13 @@ export function createCertificateService({
       explorerTxUrl: `${MONAD_EXPLORER_URL}/tx/${row.attendanceTxHash}`,
       explorerContractUrl: `${MONAD_EXPLORER_URL}/address/${checksumContract}`,
       disclaimer:
-        "Bu belge resmî bir üniversite diploması veya akademik yeterlilik belgesi değildir; yalnızca belirtilen cüzdan adresinin Monad Testnet üzerindeki CampusPass akıllı sözleşmesinde doğrulanmış etkinlik katılımını (AttendanceMarked) temsil eder.",
+        "Bu belge resmî bir üniversite diploması veya akademik yeterlilik belgesi değildir; yalnızca belirtilen cüzdan adresinin Monad Testnet üzerindeki CampusPass akıllı sözleşmesinde doğrulanmış etkinlik katılımını (AttendanceMarked) temsil eder. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, yasal kimlik belgesi yerine geçmez.",
     };
 
     if (includePrivateDisplayName) {
       dto.displayName = row.displayName || null;
       dto.displayNameDisclaimer = row.displayName
-        ? "Bu gösterim adı cüzdan sahibi tarafından beyan edilmiştir; bağımsız kimlik doğrulaması niteliği taşımaz."
+        ? "Bu gösterim adı cüzdan sahibinin CampusPass profilinde kayıtlı katılımcı adı olarak sertifikaya mühürlenmiştir. SIWE oturumu yalnızca cüzdan sahipliğini doğrular, resmî kimlik doğrulaması yerine geçmez."
         : null;
     }
 
@@ -220,6 +222,7 @@ export function createCertificateService({
     eventId,
     requestedWalletAddress = null,
     displayName = "",
+    requireProfileName = false,
   }) {
     if (!sessionWalletAddress) {
       throw ApiError.unauthorized(
@@ -229,33 +232,63 @@ export function createCertificateService({
     }
 
     const {
-      checksumAddress: checksumParticipant,
-      normalizedAddress: normalizedParticipant,
+      checksumAddress: checksumSession,
+      normalizedAddress: normalizedSession,
     } = validateAndNormalizeAddress(sessionWalletAddress, "Oturum cüzdan adresi");
-
-    // Koşul 2: Talep edilen cüzdan oturumdaki cüzdanla birebir aynı olmalı
-    if (requestedWalletAddress) {
-      const { normalizedAddress: normalizedRequested } = validateAndNormalizeAddress(
-        requestedWalletAddress,
-        "Talep edilen cüzdan adresi"
-      );
-      if (normalizedRequested !== normalizedParticipant) {
-        throw ApiError.forbidden(
-          "Yetkisiz işlem: Başka bir cüzdan adresi adına sertifika oluşturulamaz.",
-          "CERTIFICATE_WALLET_MISMATCH"
-        );
-      }
-    }
 
     const numEventId = Number(eventId);
     if (!Number.isSafeInteger(numEventId) || numEventId <= 0) {
       throw ApiError.badRequest("Geçersiz etkinlik kimliği (eventId).");
     }
 
-    const cleanDisplayName =
-      typeof displayName === "string" && displayName.trim()
-        ? displayName.trim()
-        : null;
+    let checksumParticipant = checksumSession;
+    let normalizedParticipant = normalizedSession;
+    const isDelegatedRequest = Boolean(
+      requestedWalletAddress &&
+        validateAndNormalizeAddress(
+          requestedWalletAddress,
+          "Talep edilen cüzdan adresi"
+        ).normalizedAddress !== normalizedSession
+    );
+
+    if (requestedWalletAddress) {
+      const parsedTarget = validateAndNormalizeAddress(
+        requestedWalletAddress,
+        "Talep edilen cüzdan adresi"
+      );
+      checksumParticipant = parsedTarget.checksumAddress;
+      normalizedParticipant = parsedTarget.normalizedAddress;
+    }
+
+    // Güvenlik & Doğruluk İlkesi: Sertifika üzerindeki katılımcı ismi ASLA sadece
+    // istek gövdesindeki (request body) güvenilmez veriden kabul edilmez.
+    // Katılımcının sunucu tarafında doğrulanmış StudentProfile kaydı sorgulanır.
+    let trustedRecipientName = null;
+    if (prisma.studentProfile) {
+      const studentProf = await prisma.studentProfile.findUnique({
+        where: { walletAddress: normalizedParticipant },
+      });
+      if (
+        studentProf &&
+        typeof studentProf.displayName === "string" &&
+        studentProf.displayName.trim().length > 0
+      ) {
+        trustedRecipientName = studentProf.displayName.trim();
+      }
+    }
+
+    // İsim zorunluluğu bayrağı (requireProfileName) varsa ve profil ismi yoksa işlemi blokla
+    if (requireProfileName && !trustedRecipientName) {
+      const msg = isDelegatedRequest
+        ? "Sertifika oluşturulabilmesi için katılımcının CampusPass profilinde geçerli bir ad ve soyad tanımlı olmalıdır. Katılımcı henüz profilini (/settings) tamamlamamış."
+        : "Sertifika oluşturulabilmesi için CampusPass profilinizde geçerli bir ad ve soyad tanımlı olmalıdır. Lütfen Hesap Ayarları (/settings) sayfasından profilinizi tamamlayın.";
+      throw ApiError.badRequest(msg, "PROFILE_NAME_REQUIRED");
+    }
+
+    // Sertifikaya mühürlenecek anlık (snapshot) katılımcı tam adı:
+    // Sahte isim uydurulmaz (do not fabricate one); profil adı varsa snapshot edilir,
+    // yoksa onaylı ürün kuralları gereği deliberate fallback (null) olarak saklanır.
+    const snapshottedRecipientName = trustedRecipientName || null;
 
     const lockKey = `${chainId}:${contractAddressNormalized}:${numEventId}:${normalizedParticipant}`;
     if (inFlightIssuanceMap.has(lockKey)) {
@@ -275,6 +308,44 @@ export function createCertificateService({
           `Etkinlik #${numEventId} blokzincir üzerinde bulunamadı.`,
           "EVENT_NOT_FOUND"
         );
+      }
+
+      // Koşul 2: Talep edilen cüzdan oturumdaki cüzdanla aynı olmalı VEYA çağrıyı yapan
+      // cüzdan bu etkinliğin yetkili organizatörü / topluluk yöneticisi (OWNER/ADMIN) olmalı
+      if (isDelegatedRequest) {
+        let isAuthorizedOrganizer =
+          onChainEvent.organizerNormalized === normalizedSession;
+
+        if (!isAuthorizedOrganizer && prisma.eventMetadata && prisma.communityMember) {
+          const evMeta = await prisma.eventMetadata.findUnique({
+            where: {
+              chainId_contractAddress_eventId: {
+                chainId,
+                contractAddress: contractAddressNormalized,
+                eventId: numEventId,
+              },
+            },
+          });
+          if (evMeta?.communityId) {
+            const commMember = await prisma.communityMember.findFirst({
+              where: {
+                communityId: evMeta.communityId,
+                walletAddress: normalizedSession,
+                status: "ACTIVE",
+              },
+            });
+            if (commMember && ["OWNER", "ADMIN"].includes(commMember.role)) {
+              isAuthorizedOrganizer = true;
+            }
+          }
+        }
+
+        if (!isAuthorizedOrganizer) {
+          throw ApiError.forbidden(
+            "Yetkisiz işlem: Başka bir cüzdan adresi adına sertifika oluşturulamaz.",
+            "CERTIFICATE_WALLET_MISMATCH"
+          );
+        }
       }
 
       // Koşul 4 & 5: Katılım blokzincir üzerinde (attended === true) doğrulanmış olmalı;
@@ -412,7 +483,7 @@ export function createCertificateService({
             data: {
               ...baseRecord,
               status: CERTIFICATE_STATUS.ACTIVE,
-              displayName: cleanDisplayName ?? existing.displayName,
+              displayName: snapshottedRecipientName ?? existing.displayName,
               certificateHash: integrity.certificateHash,
               integritySignature: integrity.integritySignature,
             },
@@ -448,7 +519,7 @@ export function createCertificateService({
           data: {
             ...baseRecord,
             status: CERTIFICATE_STATUS.ACTIVE,
-            displayName: cleanDisplayName,
+            displayName: snapshottedRecipientName,
             certificateHash: integrity.certificateHash,
             integritySignature: integrity.integritySignature,
             metadataUri: `/verify/${certificateId}`,
@@ -461,6 +532,26 @@ export function createCertificateService({
           idempotent: false,
         };
       });
+
+      if (txResult.created && notificationService) {
+        try {
+          await notificationService.createNotification({
+            recipientWallet: normalizedParticipant,
+            type: "CERTIFICATE_ISSUED",
+            title: "Dijital Katılım Sertifikanız Hazır! 🎓",
+            message: `"${onChainEvent.title}" etkinliği için blokzincir doğrulamalı dijital katılım sertifikanız oluşturuldu.`,
+            destinationUrl: `/verify/${txResult.record.certificateId}`,
+            dedupKey: `cert-issued:${chainId}:${numEventId}:${normalizedParticipant}`,
+            metadata: {
+              eventId: numEventId,
+              eventTitle: onChainEvent.title,
+              certificateId: txResult.record.certificateId,
+            },
+          });
+        } catch {
+          // Bildirim hatası sertifika üretimini engellemez
+        }
+      }
 
       return {
         certificate: formatCertificateDto(txResult.record, metadataRow, {

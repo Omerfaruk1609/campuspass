@@ -69,6 +69,17 @@ describe("Faz 10 — Blockchain Doğrulamalı Dijital Katılım Sertifikaları T
     // Blokzincir olaylarını PostgreSQL veri katmanına indeksle
     await indexer.syncOnce();
 
+    // studentAttended için doğrulanmış CampusPass profili oluştur
+    if (prisma.studentProfile) {
+      await prisma.studentProfile.create({
+        data: {
+          walletAddress: studentAttended.address.toLowerCase(),
+          displayName: "Ömer Faruk",
+          university: "Monad Üniversitesi",
+        },
+      });
+    }
+
     const { app, services } = buildCampusPassApp({
       prisma,
       contract: campusPass,
@@ -749,7 +760,13 @@ describe("Faz 10 — Blockchain Doğrulamalı Dijital Katılım Sertifikaları T
   });
 
   it("14. Yatay A4 PDF ve SVG sertifika üreticisi QR kod, Türkçe karakter desteği ve tüm zorunlu blokzincir alanlarıyla geçerli çıktı üretir", async function () {
-    const { app, studentAttended } = await deployCertificateFixture();
+    const { app, studentAttended, prisma } = await deployCertificateFixture();
+    if (prisma.studentProfile) {
+      await prisma.studentProfile.update({
+        where: { walletAddress: studentAttended.address.toLowerCase() },
+        data: { displayName: "Çağrı Şahin Yılmaz" },
+      });
+    }
     const session = await loginWithSiwe(app, studentAttended);
 
     const createRes = await app.inject({

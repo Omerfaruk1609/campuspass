@@ -5,7 +5,7 @@ import Footer from "../components/Footer";
 import ScrollToTop from "../components/ScrollToTop";
 import RouteLoadingFallback from "../components/RouteLoadingFallback";
 import { useAppContext } from "../context/AppContext";
-import { MONAD_EXPLORER_URL } from "../data/events";
+import { MONAD_CHAIN_ID, MONAD_EXPLORER_URL } from "../data/events";
 
 export default function RootLayout() {
   const {
@@ -43,6 +43,42 @@ export default function RootLayout() {
         isConnecting={isConnecting}
         unreadNotificationCount={unreadNotificationCount}
       />
+
+      {/* Yanlış Ağ (Wrong Network) Uyarı Çubuğu */}
+      {account && chainId && Number(chainId) !== MONAD_CHAIN_ID && (
+        <div
+          className="global-banner error"
+          role="alert"
+          style={{
+            backgroundColor: "rgba(239, 68, 68, 0.15)",
+            borderLeft: "4px solid #ef4444",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          <div className="banner-content">
+            <span>
+              <strong>Yanlış Ağ Uyarısı:</strong> CampusPass, Monad Testnet (Chain ID:{" "}
+              {MONAD_CHAIN_ID}) üzerinde çalışmaktadır. Bağlı olduğunuz ağ ID: {chainId}.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleSwitchNetwork}
+            style={{
+              backgroundColor: "#ef4444",
+              borderColor: "#ef4444",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Monad Testnet Ağına Geç (10143)
+          </button>
+        </div>
+      )}
 
       {/* Backend API Durumu ve Yerel Veri Kurtarma / Senkronizasyon Çubuğu */}
       {!backendStatus.checking && (!backendStatus.online || pendingSyncItems.length > 0) && (

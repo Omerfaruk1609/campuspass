@@ -24,6 +24,10 @@ import {
   mergeOnChainEventWithMetadata,
   validatePosterFile,
 } from "../utils/eventMetadata";
+import {
+  fetchManageableCommunitiesFromBackend,
+  verifyAttendanceOnBackend,
+} from "../utils/apiClient";
 
 function QrSvg({ value, size = 220 }) {
   if (!value) return null;
@@ -234,6 +238,10 @@ export default function EventPage(props) {
 
   // Organizatör Metadata Düzenleme State
   const [editMode, setEditMode] = useState(false);
+  const [manageableCommunities, setManageableCommunities] = useState(
+    props.manageableCommunities ?? []
+  );
+  const [editCommunityId, setEditCommunityId] = useState(event?.communityId || "");
   const [editCommunity, setEditCommunity] = useState(event?.community || "");
   const [editCategory, setEditCategory] = useState(event?.category || "Blockchain");
   const [editDescription, setEditDescription] = useState(event?.description || "");
@@ -252,9 +260,48 @@ export default function EventPage(props) {
   );
   const [editError, setEditError] = useState("");
 
+  useEffect(() => {
+    let isMounted = true;
+    async function loadManageable() {
+      if (!editMode || !account || Array.isArray(props.manageableCommunities)) return;
+      try {
+        const data = await fetchManageableCommunitiesFromBackend();
+        const rawList = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.communities)
+          ? data.communities
+          : Array.isArray(data?.items)
+          ? data.items
+          : [];
+        const list = rawList.map((c) => ({
+          ...c,
+          communityId: c.communityId || c.id,
+        }));
+        if (isMounted) {
+          setManageableCommunities(list);
+          if (list.length > 0 && !editCommunityId) {
+            const matched =
+              list.find((c) => c.communityId === event?.communityId) ||
+              list.find((c) => c.name === event?.community) ||
+              list[0];
+            setEditCommunityId(matched.communityId);
+            setEditCommunity(matched.name);
+          }
+        }
+      } catch {
+        // Fallback to existing community value if session/backend not ready
+      }
+    }
+    loadManageable();
+    return () => {
+      isMounted = false;
+    };
+  }, [editMode, account, event?.communityId, event?.community, editCommunityId, props.manageableCommunities]);
+
   // Event yüklendiğinde düzenleme alanlarını senkronize et
   useEffect(() => {
     if (event) {
+      setEditCommunityId(event.communityId || "");
       setEditCommunity(event.community || "");
       setEditCategory(event.category || "Blockchain");
       setEditDescription(event.description || "");
@@ -405,12 +452,16 @@ export default function EventPage(props) {
     cancelled: "stitch-badge-full",
   };
 
-  // Öğrenci İmzalı QR Üretimi
+  // Öğrenci İmzalı QR Üretimi (Yalnızca katılımcı öğrenciler için; organizatör kendi QR kodunu üretemez)
   async function handleGenerateQr() {
     setQrError("");
     setCopiedQr(false);
     if (!account) {
       setQrError("QR kod üretmek için cüzdanınızı bağlayın.");
+      return;
+    }
+    if (isOrganizer) {
+      setQrError("Güvenlik Kuralı: Etkinlik organizatörü kendi etkinliği için öğrenci katılım QR kodu üretemez.");
       return;
     }
     if (!isCorrectNetwork) {
@@ -461,6 +512,33 @@ export default function EventPage(props) {
         expectedEventId: event.id,
         connectedAccount: account,
       });
+
+      if (res.valid && res.ticket && context?.sessionState?.authenticated) {
+        try {
+          const backendCheck = await verifyAttendanceOnBackend(event.id, {
+            rawQrString: rawToVerify,
+            participantAddress: res.ticket.participant,
+            consumeNonce: false,
+          });
+          res.registrationExists = Boolean(backendCheck?.registrationExists ?? res.registrationExists);
+          res.attendanceVerified = Boolean(backendCheck?.attendanceVerified ?? res.attendanceVerified);
+          res.checks.push({
+            id: "backend_siwe_auth",
+            label: "Sunucu SIWE & Yetki Denetimi",
+            passed: true,
+            detail: `Sunucu yetki kontrolü başarılı (${backendCheck?.authorizedRole || "ORGANIZER"}).`,
+          });
+        } catch (backendErr) {
+          res.valid = false;
+          res.checks.push({
+            id: "backend_siwe_auth",
+            label: "Sunucu SIWE & Yetki Denetimi",
+            passed: false,
+            detail: backendErr.message || "Sunucu doğrulaması reddedildi.",
+          });
+        }
+      }
+
       setVerificationResult(res);
     } catch (err) {
       setVerificationResult({
@@ -487,18 +565,22 @@ export default function EventPage(props) {
 
     const { ticket } = verificationResult;
 
+    if (account && ticket.participant && ticket.participant.toLowerCase() === account.toLowerCase()) {
+      setLocalError("Güvenlik Kuralı: Bir kullanıcı kendi QR kodunu okutarak kendi katılımını doğrulayamaz.");
+      return;
+    }
+
     const nowSec = Math.floor(Date.now() / 1000);
     if (nowSec > ticket.expiresAt) {
       await handleVerifyQr(qrInputRaw);
       return;
     }
 
-    const ok = await onMarkAttendance(event.id, ticket.participant);
+    const ok = await onMarkAttendance(event.id, ticket.participant, {
+      rawQrString: qrInputRaw,
+    });
     if (ok) {
       markNonceUsed(ticket.nonce);
-      if (account && ticket.participant && ticket.participant.toLowerCase() === account.toLowerCase()) {
-        setUserEventStatus({ isRegistered: true, isAttended: true });
-      }
       await handleVerifyQr(qrInputRaw);
     }
   }
@@ -544,6 +626,10 @@ export default function EventPage(props) {
       setLocalError("Yalnızca etkinliğin organizatörü katılım doğrulayabilir.");
       return;
     }
+    if (account && cleaned.toLowerCase() === account.toLowerCase()) {
+      setLocalError("Güvenlik Kuralı: Organizatör veya öğrenci kendi katılımını işaretleyemez.");
+      return;
+    }
     if (!isCorrectNetwork) {
       setLocalError("Lütfen önce Monad Testnet (10143) ağına geçin.");
       return;
@@ -551,9 +637,6 @@ export default function EventPage(props) {
 
     const ok = await onMarkAttendance(event.id, cleaned);
     if (ok) {
-      if (account && cleaned.toLowerCase() === account.toLowerCase()) {
-        setUserEventStatus({ isRegistered: true, isAttended: true });
-      }
       await handleCheckParticipant(cleaned);
     }
   }
@@ -592,8 +675,24 @@ export default function EventPage(props) {
     e.preventDefault();
     setEditError("");
 
+    const selectedComm = manageableCommunities.find(
+      (c) => c.communityId === editCommunityId
+    );
+    const resolvedCommunityId = selectedComm
+      ? selectedComm.communityId
+      : editCommunityId || event.communityId || null;
+    const resolvedCommunityName = selectedComm
+      ? selectedComm.name
+      : editCommunity || event.community;
+
+    if (!resolvedCommunityName) {
+      setEditError("Düzenleyen topluluk seçimi zorunludur.");
+      return;
+    }
+
     const updatedPayload = {
-      community: editCommunity,
+      ...(resolvedCommunityId ? { communityId: resolvedCommunityId } : {}),
+      community: resolvedCommunityName,
       category: editCategory,
       description: editDescription,
       date: editDate,
@@ -623,6 +722,7 @@ export default function EventPage(props) {
   async function handleToggleCancelEvent(shouldCancel) {
     setEditError("");
     const updatedPayload = {
+      ...(event.communityId ? { communityId: event.communityId } : {}),
       community: event.community,
       category: event.category,
       description: event.description,
@@ -1077,8 +1177,8 @@ export default function EventPage(props) {
                 </div>
               </section>
 
-              {/* ÖĞRENCİ İMZALI QR KATILIM ALANI (Kayıtlı ve Katılımı Doğrulanmamışsa) */}
-              {account && isRegistered && !isAttended && (
+              {/* ÖĞRENCİ İMZALI QR KATILIM ALANI (Yalnızca Organizatör Olmayan, Kayıtlı ve Katılımı Doğrulanmamış Öğrenciye Görünür) */}
+              {account && !isOrganizer && isRegistered && !isAttended && (
                 <section
                   className="stitch-card"
                   style={{
@@ -1449,6 +1549,14 @@ export default function EventPage(props) {
                       <div style={{ fontWeight: 600, fontSize: "0.8125rem", color: verificationResult.valid ? "#6ee7b7" : "var(--stitch-error)" }}>
                         {verificationResult.valid ? "✓ Doğrulama Başarılı" : "✗ Doğrulama Başarısız"}
                       </div>
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.45rem" }}>
+                        <span className={`stitch-badge ${verificationResult.registrationExists ? "stitch-badge-open" : "stitch-badge-full"}`}>
+                          {verificationResult.registrationExists ? "Kayıt Durumu: Kayıtlı ✓" : "Kayıt Durumu: Kayıtsız ✗"}
+                        </span>
+                        <span className={`stitch-badge ${verificationResult.attendanceVerified ? "stitch-badge-completed" : "stitch-badge-testnet"}`}>
+                          {verificationResult.attendanceVerified ? "Katılım Durumu: Doğrulandı ✓" : "Katılım Durumu: Onay Bekliyor"}
+                        </span>
+                      </div>
                       <ul style={{ listStyle: "none", padding: 0, margin: "0.5rem 0 0 0", fontSize: "0.75rem" }}>
                         {verificationResult.checks.map((item) => (
                           <li key={item.id} style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
@@ -1496,9 +1604,9 @@ export default function EventPage(props) {
                     </form>
                     {localError && <div style={{ color: "var(--stitch-error)", fontSize: "0.75rem", marginTop: "0.25rem" }}>{localError}</div>}
                     {lookupStatus && (
-                      <div className="font-label-mono" style={{ fontSize: "0.6875rem", marginTop: "0.5rem" }}>
-                        <div>Kayıtlı: {lookupStatus.isRegistered ? "Evet ✓" : "Hayır ✗"}</div>
-                        <div>Katıldı: {lookupStatus.isAttended ? "Evet ✓" : "Hayır ✗"}</div>
+                      <div className="font-label-mono" style={{ fontSize: "0.6875rem", marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                        <div>Kayıt Durumu (Registration): {lookupStatus.isRegistered ? "Kayıtlı ✓" : "Kayıtlı Değil ✗"}</div>
+                        <div>Katılım Durumu (Attendance): {lookupStatus.isAttended ? "Doğrulandı ✓" : "Henüz Doğrulanmadı ✗"}</div>
                       </div>
                     )}
                   </details>
@@ -1570,14 +1678,35 @@ export default function EventPage(props) {
                   <label className="font-label-badge text-outline" htmlFor="edit-community">
                     Düzenleyen Topluluk *
                   </label>
-                  <input
+                  <select
                     id="edit-community"
-                    type="text"
-                    className="stitch-input"
-                    value={editCommunity}
-                    onChange={(e) => setEditCommunity(e.target.value)}
+                    className="stitch-select"
+                    value={editCommunityId || editCommunity}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const found = manageableCommunities.find((c) => c.communityId === val);
+                      if (found) {
+                        setEditCommunityId(found.communityId);
+                        setEditCommunity(found.name);
+                      } else {
+                        setEditCommunityId("");
+                        setEditCommunity(val);
+                      }
+                    }}
                     style={{ marginTop: "0.25rem" }}
-                  />
+                  >
+                    {manageableCommunities.length > 0 ? (
+                      manageableCommunities.map((comm) => (
+                        <option key={comm.communityId || comm.id} value={comm.communityId || comm.id}>
+                          {`${comm.name} (${comm.role === "OWNER" ? "Kurucu" : "Yönetici"})`}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={editCommunityId || editCommunity}>
+                        {editCommunity || event.community}
+                      </option>
+                    )}
+                  </select>
                 </div>
 
                 <div>
