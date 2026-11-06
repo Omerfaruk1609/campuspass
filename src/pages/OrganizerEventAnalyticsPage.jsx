@@ -8,6 +8,7 @@ import {
   shortenAddress,
 } from "../data/events";
 import {
+  checkServerSession,
   downloadOrganizerEventCsv,
   ensureOrganizerSiweSession,
   fetchOrganizerEventAnalyticsFromBackend,
@@ -27,10 +28,10 @@ export default function OrganizerEventAnalyticsPage(props) {
   const handleBack = props.onBack || (() => (navigate ? navigate("/organizer") : null));
   const onBack = handleBack;
   const handleOpenEvent = props.onOpenEventPage || ((id) => (navigate ? navigate(`/events/${id}`) : null));
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(props.initialEventData ? false : true);
   const [error, setError] = useState(null);
-  const [eventData, setEventData] = useState(null);
-  const [metrics, setMetrics] = useState(null);
+  const [eventData, setEventData] = useState(props.initialEventData?.event ?? props.initialEventData ?? null);
+  const [metrics, setMetrics] = useState(props.initialEventData?.metrics ?? props.initialEventData ?? null);
 
   // Participants Table state
   const [participants, setParticipants] = useState([]);
@@ -59,6 +60,17 @@ export default function OrganizerEventAnalyticsPage(props) {
 
   const ensureSiwe = useCallback(async () => {
     if (!account) return false;
+
+    // 1. AppContext sessionState kontrolü
+    if (
+      context?.sessionState?.authenticated &&
+      context?.sessionState?.walletAddress &&
+      context?.sessionState?.walletAddress.toLowerCase() === account.toLowerCase()
+    ) {
+      return true;
+    }
+
+    // 2. apiClient aktif bellek oturum kontrolü
     const current = getActiveAuthState();
     if (
       current.authenticated &&
@@ -66,6 +78,35 @@ export default function OrganizerEventAnalyticsPage(props) {
       current.walletAddress.toLowerCase() === account.toLowerCase()
     ) {
       return true;
+    }
+
+    // 3. Mevcut HttpOnly sunucu çerezi kontrolü
+    try {
+      const serverCheck = await checkServerSession();
+      if (
+        serverCheck?.authenticated &&
+        serverCheck?.walletAddress &&
+        serverCheck.walletAddress.toLowerCase() === account.toLowerCase()
+      ) {
+        return true;
+      }
+    } catch {
+      // Devam et
+    }
+
+    // 4. AppContext handleSiweLogin varsa önce onu dene
+    if (typeof context?.handleSiweLogin === "function") {
+      setAuthenticating(true);
+      setAuthError(null);
+      try {
+        await context.handleSiweLogin();
+        return true;
+      } catch (err) {
+        setAuthError(err.message || "SIWE oturumu doğrulanamadı.");
+        return false;
+      } finally {
+        setAuthenticating(false);
+      }
     }
 
     if (!window.ethereum) {
@@ -86,7 +127,7 @@ export default function OrganizerEventAnalyticsPage(props) {
     } finally {
       setAuthenticating(false);
     }
-  }, [account]);
+  }, [account, context]);
 
   const loadEventAnalytics = useCallback(async () => {
     if (!eventId || !account) return;
@@ -100,9 +141,10 @@ export default function OrganizerEventAnalyticsPage(props) {
       }
 
       const res = await fetchOrganizerEventAnalyticsFromBackend(eventId);
-      if (res && res.data) {
-        setEventData(res.data.event);
-        setMetrics(res.data.metrics);
+      const unwrapped = res?.data ?? res;
+      if (unwrapped) {
+        setEventData(unwrapped.event || unwrapped);
+        setMetrics(unwrapped.metrics || null);
       }
     } catch (err) {
       setError(
@@ -120,17 +162,24 @@ export default function OrganizerEventAnalyticsPage(props) {
       if (!eventId || !account) return;
       setLoadingParticipants(true);
       try {
-        const res = await fetchOrganizerEventParticipantsFromBackend({
-          eventId,
+        const res = await fetchOrganizerEventParticipantsFromBackend(eventId, {
           page: pageToLoad,
           limit: 10,
           status: participantFilter,
           search: searchQuery,
         });
-        if (res && res.data) {
-          setParticipants(res.data.participants || []);
-          if (res.data.pagination) {
-            setPagination(res.data.pagination);
+        const unwrapped = res?.data ?? res;
+        if (unwrapped) {
+          const list = unwrapped.participants || unwrapped.items || [];
+          setParticipants(list);
+          if (unwrapped.pagination) {
+            setPagination(unwrapped.pagination);
+          }
+          if (unwrapped.totals) {
+            setMetrics((prev) => ({
+              ...prev,
+              ...unwrapped.totals,
+            }));
           }
         }
       } catch (err) {
@@ -420,6 +469,11 @@ export default function OrganizerEventAnalyticsPage(props) {
             </div>
 
             <div className="kpi-card">
+              <span className="kpi-value">{metrics.remainingCapacity ?? Math.max(0, (metrics.capacity || 0) - (metrics.registeredCount || 0))}</span>
+              <span className="kpi-label">Kalan Kontenjan</span>
+            </div>
+
+            <div className="kpi-card">
               <span className="kpi-value">{metrics.certificateCount}</span>
               <span className="kpi-label">Verilen Sertifika</span>
             </div>
@@ -430,8 +484,8 @@ export default function OrganizerEventAnalyticsPage(props) {
             </div>
 
             <div className="kpi-card" style={{ borderLeft: "3px solid #f87171" }}>
-              <span className="kpi-value">%{metrics.dropOffRate}</span>
-              <span className="kpi-label">Vazgeçme / Kayıp Oranı</span>
+              <span className="kpi-value">{metrics.noShowCount ?? 0}</span>
+              <span className="kpi-label">Gelmeyen (No-show)</span>
             </div>
           </div>
         </section>
@@ -493,6 +547,20 @@ export default function OrganizerEventAnalyticsPage(props) {
               onClick={() => handleFilterChange("CERTIFIED")}
             >
               Sertifikalı ({metrics?.certificateCount ?? 0})
+            </button>
+            <button
+              type="button"
+              className={`pill-btn ${participantFilter === "NO_SHOW" ? "active" : ""}`}
+              onClick={() => handleFilterChange("NO_SHOW")}
+            >
+              Katılmadı / No-show ({metrics?.noShowCount ?? 0})
+            </button>
+            <button
+              type="button"
+              className={`pill-btn ${participantFilter === "MISSING_PROFILE_NAME" ? "active" : ""}`}
+              onClick={() => handleFilterChange("MISSING_PROFILE_NAME")}
+            >
+              Profil Adı Eksik ({metrics?.missingProfileNameCount ?? 0})
             </button>
           </div>
         </div>
@@ -578,20 +646,38 @@ export default function OrganizerEventAnalyticsPage(props) {
                     </td>
                     <td>
                       {p.isAttended ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                          <span className="status-badge attended">Doğrulandı ✓</span>
-                          {p.attendanceTxHash && (
-                            <a
-                              href={`${MONAD_EXPLORER_URL}/tx/${p.attendanceTxHash}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="explorer-tx-pill"
-                              title="Katılım tx hash"
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                            <span className="status-badge attended">Doğrulandı ✓</span>
+                            {p.attendanceTxHash && (
+                              <a
+                                href={`${MONAD_EXPLORER_URL}/tx/${p.attendanceTxHash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="explorer-tx-pill"
+                                title="Katılım tx hash"
+                              >
+                                Tx ↗
+                              </a>
+                            )}
+                          </div>
+                          {p.verifiedByWallet && (
+                            <span
+                              style={{ fontSize: "0.72rem", color: "var(--stitch-text-muted, #94a3b8)" }}
+                              title={`Doğrulayan: ${p.verifiedByWallet}`}
                             >
-                              Tx ↗
-                            </a>
+                              Doğrulayan: {shortenAddress(p.verifiedByWallet)}
+                            </span>
                           )}
                         </div>
+                      ) : p.isNoShow ? (
+                        <span
+                          className="status-badge error"
+                          style={{ background: "rgba(239, 68, 68, 0.15)", color: "#ef4444" }}
+                          title="Etkinlik tamamlandı, katılım doğrulanmadı"
+                        >
+                          Katılmadı (No-show)
+                        </span>
                       ) : (
                         <span className="status-badge inactive">Doğrulanmadı</span>
                       )}

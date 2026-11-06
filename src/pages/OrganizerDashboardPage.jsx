@@ -11,6 +11,7 @@ import {
   checkServerSession,
   downloadOrganizerEventCsv,
   ensureOrganizerSiweSession,
+  fetchManageableCommunitiesFromBackend,
   fetchOrganizerDashboardFromBackend,
   fetchOrganizerTimeseriesFromBackend,
   getActiveAuthState,
@@ -62,6 +63,7 @@ export default function OrganizerDashboardPage(props) {
   const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState(props.initialDashboardData ?? null);
   const [timeseriesData, setTimeseriesData] = useState(props.initialTimeseriesData ?? []);
+  const [managedCommunities, setManagedCommunities] = useState([]);
 
   // Filtreleme & Arama state
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -161,9 +163,10 @@ export default function OrganizerDashboardPage(props) {
         return;
       }
 
-      const [dashRes, timeRes] = await Promise.all([
+      const [dashRes, timeRes, commRes] = await Promise.all([
         fetchOrganizerDashboardFromBackend(),
         fetchOrganizerTimeseriesFromBackend({ interval: "DAY" }).catch(() => null),
+        fetchManageableCommunitiesFromBackend().catch(() => []),
       ]);
 
       const unwrappedDashboard = dashRes?.data ?? dashRes;
@@ -178,6 +181,9 @@ export default function OrganizerDashboardPage(props) {
       if (unwrappedTimeseries && Array.isArray(unwrappedTimeseries.eventsSeries)) {
         setTimeseriesData(unwrappedTimeseries.eventsSeries);
       }
+
+      const rawComms = commRes?.items || commRes?.communities || (Array.isArray(commRes) ? commRes : []);
+      setManagedCommunities(Array.isArray(rawComms) ? rawComms : []);
     } catch (err) {
       setError(err.message || "Organizatör paneli verileri alınamadı.");
     } finally {
@@ -459,6 +465,100 @@ export default function OrganizerDashboardPage(props) {
           </div>
         </section>
       )}
+
+      {/* 3.5. Yönettiğim Topluluklar & Operasyon Merkezleri (Faz 19) */}
+      <section className="card-panel" style={{ marginTop: "1.25rem" }}>
+        <div className="panel-header-flex" style={{ flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <h2>Yönettiğim Topluluklar &amp; Kulüpler</h2>
+            <p className="panel-subtitle">
+              Yöneticisi (OWNER / ADMIN) olduğunuz üniversite toplulukları ve operasyon merkezleri.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => navigate("/communities?create=1")}
+          >
+            + Yeni Topluluk Kur
+          </button>
+        </div>
+
+        {managedCommunities.length === 0 ? (
+          <div className="empty-state" style={{ padding: "1.5rem 1rem", textAlign: "center" }}>
+            <p className="font-body-sm text-outline">
+              Henüz yöneticisi olduğunuz bir topluluk bulunmuyor. Yeni bir öğrenci topluluğu kurarak etkinliklerinizi topluluk çatısı altında toplayabilirsiniz.
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "1rem",
+              marginTop: "1rem",
+            }}
+          >
+            {managedCommunities.map((c) => (
+              <div
+                key={c.id || c.slug}
+                className="stitch-card-low"
+                style={{
+                  padding: "1.25rem",
+                  borderRadius: "1rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  gap: "0.875rem",
+                  border: "1px solid rgba(111, 136, 255, 0.2)",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                    <span className={`stitch-badge ${c.role === "OWNER" ? "stitch-badge-verified" : "stitch-badge-testnet"}`}>
+                      {c.role === "OWNER" ? "Sahip (OWNER)" : "Yönetici (ADMIN)"}
+                    </span>
+                    {c.pendingApplicationCount > 0 && (
+                      <span className="stitch-badge stitch-badge-warning" style={{ fontSize: "0.7rem" }}>
+                        {c.pendingApplicationCount} Yeni Başvuru
+                      </span>
+                    )}
+                  </div>
+                  <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "#ffffff" }}>
+                    {c.name}
+                  </h3>
+                  <div className="font-body-sm text-on-surface-variant" style={{ fontSize: "0.8125rem" }}>
+                    {c.universityName || "Monad Üniversitesi"} • /{c.slug}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "0.45rem 0.75rem",
+                    borderRadius: "0.5rem",
+                    backgroundColor: "rgba(142, 144, 161, 0.1)",
+                    fontSize: "0.8125rem",
+                  }}
+                >
+                  <span>👥 {c.activeMemberCount ?? 0} Aktif Üye</span>
+                  <span>📅 {c.eventCount ?? 0} Etkinlik</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="stitch-btn-primary"
+                  onClick={() => navigate(`/communities/${c.slug}/manage`)}
+                  style={{ fontSize: "0.8125rem", padding: "0.5rem 1rem", justifyContent: "center" }}
+                >
+                  <span>Topluluk Operasyon Merkezi →</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* 4. Etkinlikler Listesi ve Aksiyonlar */}
       <section className="card-panel" style={{ marginTop: "1.25rem" }}>

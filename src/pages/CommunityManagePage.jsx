@@ -4,6 +4,7 @@ import { useAppContext } from "../context/AppContext";
 import {
   approveCommunityApplicationOnBackend,
   createCommunityAnnouncementOnBackend,
+  fetchCommunityActivityFromBackend,
   fetchCommunityAnalyticsFromBackend,
   fetchCommunityAnnouncementsFromBackend,
   fetchCommunityApplicationsFromBackend,
@@ -18,6 +19,7 @@ import {
   updateCommunityOnBackend,
 } from "../utils/apiClient";
 import { CONTRACT_ADDRESS, MONAD_CHAIN_ID, shortenAddress } from "../data/events";
+import { formatTurkeyDateTime } from "../utils/eventMetadata";
 
 export default function CommunityManagePage(props) {
   const context = useAppContext();
@@ -28,16 +30,17 @@ export default function CommunityManagePage(props) {
   const slug = props.slug ?? params.slug;
   const handleBack = props.onBack || (() => (navigate ? navigate(`/communities/${slug}`) : null));
   const handleOpenEvent = props.onOpenEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
-  const [community, setCommunity] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [community, setCommunity] = useState(props.initialCommunity ?? null);
+  const [loading, setLoading] = useState(props.initialCommunity ? false : true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("members"); // members | applications | events | settings | analytics
+  const [activeTab, setActiveTab] = useState("hub"); // hub | members | applications | events | announcements | settings | analytics
 
   // Sekme Verileri
   const [members, setMembers] = useState([]);
   const [applications, setApplications] = useState([]);
   const [events, setEvents] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [activityList, setActivityList] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTitle, setAnnouncementTitle] = useState("");
   const [announcementContent, setAnnouncementContent] = useState("");
@@ -79,17 +82,21 @@ export default function CommunityManagePage(props) {
       setEditWeb(comm.websiteUrl || "");
       setEditEmail(comm.contactEmail || "");
 
-      const [membersData, appsData, eventsData, analyticsData] = await Promise.all([
+      const [membersData, appsData, eventsData, analyticsData, activityData, announcementsData] = await Promise.all([
         fetchCommunityMembersFromBackend(slug, { status: "ACTIVE" }),
         fetchCommunityApplicationsFromBackend(slug),
         fetchCommunityEventsFromBackend(slug),
         fetchCommunityAnalyticsFromBackend(slug).catch(() => null),
+        fetchCommunityActivityFromBackend(slug).catch(() => ({ items: [] })),
+        fetchCommunityAnnouncementsFromBackend(slug).catch(() => ({ items: [] })),
       ]);
 
       setMembers(membersData.items || []);
       setApplications(appsData.items || []);
       setEvents(eventsData.items || []);
       setAnalytics(analyticsData);
+      setActivityList(activityData?.items || []);
+      setAnnouncements(announcementsData?.items || []);
     } catch (err) {
       setError(err?.message || "Yönetim paneli yüklenemedi.");
     } finally {
@@ -432,6 +439,17 @@ export default function CommunityManagePage(props) {
         >
           <button
             type="button"
+            className={activeTab === "hub" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+            onClick={() => setActiveTab("hub")}
+            style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "0.4rem" }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+              dashboard
+            </span>
+            Operasyon Merkezi
+          </button>
+          <button
+            type="button"
             className={activeTab === "members" ? "stitch-btn-primary" : "stitch-btn-secondary"}
             onClick={() => setActiveTab("members")}
             style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem", whiteSpace: "nowrap" }}
@@ -442,7 +460,13 @@ export default function CommunityManagePage(props) {
             type="button"
             className={activeTab === "applications" ? "stitch-btn-primary" : "stitch-btn-secondary"}
             onClick={() => setActiveTab("applications")}
-            style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem", whiteSpace: "nowrap" }}
+            style={{
+              fontSize: "0.8125rem",
+              padding: "0.45rem 0.85rem",
+              whiteSpace: "nowrap",
+              borderColor: applications.length > 0 ? "var(--stitch-tertiary)" : undefined,
+              color: applications.length > 0 && activeTab !== "applications" ? "var(--stitch-tertiary)" : undefined,
+            }}
           >
             Başvurular ({applications.length})
           </button>
@@ -453,6 +477,14 @@ export default function CommunityManagePage(props) {
             style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem", whiteSpace: "nowrap" }}
           >
             Etkinlikler ({events.length})
+          </button>
+          <button
+            type="button"
+            className={activeTab === "announcements" ? "stitch-btn-primary" : "stitch-btn-secondary"}
+            onClick={() => setActiveTab("announcements")}
+            style={{ fontSize: "0.8125rem", padding: "0.45rem 0.85rem", whiteSpace: "nowrap" }}
+          >
+            Duyurular ({announcements.length})
           </button>
           <button
             type="button"
@@ -471,6 +503,204 @@ export default function CommunityManagePage(props) {
             Analitik
           </button>
         </div>
+
+        {/* 0. OPERASYON MERKEZİ (HUB) SEKMESİ */}
+        {activeTab === "hub" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+            {/* Hızlı Yönetim Kısayolları Grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "1rem",
+              }}
+            >
+              <div
+                className="stitch-card-low"
+                style={{
+                  padding: "1.25rem",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  border: "1px solid rgba(111, 136, 255, 0.25)",
+                }}
+                onClick={() => setActiveTab("applications")}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: "28px", color: "var(--stitch-tertiary)" }}>
+                    pending_actions
+                  </span>
+                  {applications.length > 0 && (
+                    <span className="stitch-badge stitch-badge-warning">
+                      {applications.length} Yeni
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontWeight: 700, fontSize: "1.05rem", marginTop: "0.75rem", color: "#ffffff" }}>
+                  Başvuruları İncele
+                </div>
+                <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+                  {applications.length > 0
+                    ? `${applications.length} kişi onay bekliyor.`
+                    : "Bekleyen başvuru yok."}
+                </div>
+              </div>
+
+              <div
+                className="stitch-card-low"
+                style={{
+                  padding: "1.25rem",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onClick={() => setActiveTab("members")}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "28px", color: "var(--stitch-primary)" }}>
+                  group
+                </span>
+                <div style={{ fontWeight: 700, fontSize: "1.05rem", marginTop: "0.75rem", color: "#ffffff" }}>
+                  Üyeleri Yönet
+                </div>
+                <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+                  {members.length} aktif üye listesi ve roller.
+                </div>
+              </div>
+
+              <div
+                className="stitch-card-low"
+                style={{
+                  padding: "1.25rem",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onClick={() => setActiveTab("announcements")}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "28px", color: "var(--stitch-secondary)" }}>
+                  campaign
+                </span>
+                <div style={{ fontWeight: 700, fontSize: "1.05rem", marginTop: "0.75rem", color: "#ffffff" }}>
+                  Duyuru Yayınla
+                </div>
+                <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+                  Tüm aktif üyelere anlık bildirim gönderin.
+                </div>
+              </div>
+
+              <div
+                className="stitch-card-low"
+                style={{
+                  padding: "1.25rem",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onClick={() => setActiveTab("events")}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "28px", color: "#6ee7b7" }}>
+                  event_available
+                </span>
+                <div style={{ fontWeight: 700, fontSize: "1.05rem", marginTop: "0.75rem", color: "#ffffff" }}>
+                  Topluluk Etkinlikleri
+                </div>
+                <div className="font-body-sm text-on-surface-variant" style={{ marginTop: "0.25rem" }}>
+                  {events.length} etkinlik bağlı.
+                </div>
+              </div>
+            </div>
+
+            {/* Gerçek Operasyonel Hareketler Akışı */}
+            <div className="stitch-card" style={{ padding: "1.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div>
+                  <h3 className="font-headline-sm" style={{ margin: 0 }}>
+                    Son Operasyonel Hareketler
+                  </h3>
+                  <p className="font-body-sm text-on-surface-variant" style={{ margin: "0.25rem 0 0" }}>
+                    Topluluk üyeliği, yoklama, sertifika ve duyuru kayıtlarından derlenen gerçek zamanlı akış.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="stitch-btn-secondary"
+                  onClick={loadAll}
+                  style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                >
+                  ↻ Akışı Yenile
+                </button>
+              </div>
+
+              {activityList.length === 0 ? (
+                <div className="empty-state" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: "40px", color: "var(--stitch-outline)", opacity: 0.7 }}>
+                    history_edu
+                  </span>
+                  <h4 style={{ margin: "0.75rem 0 0.25rem", color: "var(--stitch-on-surface)" }}>
+                    Henüz Operasyonel Kayıt Bulunmuyor
+                  </h4>
+                  <p className="font-body-sm text-on-surface-variant" style={{ maxWidth: "480px", margin: "0 auto 1.25rem" }}>
+                    Yeni oluşturulan topluluğunuz için etkinlik bağlandığında, üyelik başvuruları değerlendirildiğinde veya katılım yoklaması alındığında burada gerçek zamanlı hareketler listelenecektir.
+                  </p>
+                  <button
+                    type="button"
+                    className="stitch-btn-primary"
+                    onClick={() => setActiveTab("events")}
+                    style={{ fontSize: "0.8125rem", padding: "0.5rem 1.25rem" }}
+                  >
+                    + İlk Etkinliği Bağla
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+                  {activityList.map((item) => (
+                    <div
+                      key={item.id}
+                      className="stitch-card-low"
+                      style={{
+                        padding: "1rem 1.25rem",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "1rem",
+                        borderLeft: `3px solid ${
+                          item.badgeColor === "success"
+                            ? "#10b981"
+                            : item.badgeColor === "warning"
+                            ? "#f59e0b"
+                            : item.badgeColor === "error"
+                            ? "#ef4444"
+                            : item.badgeColor === "tertiary"
+                            ? "#d0bcff"
+                            : "var(--stitch-primary)"
+                        }`,
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.25rem" }}>
+                          <span
+                            className="stitch-badge"
+                            style={{
+                              fontSize: "0.7rem",
+                              backgroundColor: "rgba(142, 144, 161, 0.15)",
+                              color: "var(--stitch-on-surface)",
+                            }}
+                          >
+                            {item.category || "İşlem"}
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: "0.9375rem", color: "#ffffff" }}>
+                            {item.title}
+                          </span>
+                        </div>
+                        <p className="font-body-sm text-on-surface-variant" style={{ margin: "0.25rem 0" }}>
+                          {item.description}
+                        </p>
+                        <div className="font-label-mono text-outline" style={{ fontSize: "0.6875rem" }}>
+                          {formatTurkeyDateTime(item.timestamp)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 1. ÜYELER SEKMESİ */}
         {activeTab === "members" && (
@@ -505,11 +735,15 @@ export default function CommunityManagePage(props) {
                           person
                         </span>
                         <div>
-                          <div className="font-label-mono" style={{ fontSize: "0.875rem" }}>
-                            {m.walletAddress}
+                          <div style={{ fontWeight: 600, color: "var(--stitch-on-surface, #f1f5f9)", fontSize: "0.9375rem" }}>
+                            {m.displayName || "Profilde Kayıtlı Ad Yok"}
                           </div>
-                          <div className="font-body-sm text-outline" style={{ fontSize: "0.6875rem" }}>
-                            Katılım: {m.joinedAt ? new Date(m.joinedAt).toLocaleDateString("tr-TR") : "-"}
+                          <div className="font-label-mono text-outline" style={{ fontSize: "0.75rem", marginTop: "2px" }}>
+                            {shortenAddress(m.walletAddress)}
+                          </div>
+                          <div className="font-body-sm text-outline" style={{ fontSize: "0.6875rem", marginTop: "2px" }}>
+                            Katılım: {m.joinedAt ? formatTurkeyDateTime(m.joinedAt) : "-"}
+                            {m.reviewedByDisplayName && ` • Onaylayan: ${m.reviewedByDisplayName}`}
                           </div>
                         </div>
                       </div>
@@ -578,11 +812,14 @@ export default function CommunityManagePage(props) {
                     }}
                   >
                     <div>
-                      <div className="font-label-mono" style={{ fontSize: "0.875rem" }}>
-                        {app.walletAddress}
+                      <div style={{ fontWeight: 600, color: "var(--stitch-on-surface, #f1f5f9)", fontSize: "0.9375rem" }}>
+                        {app.displayName || "Profilde Kayıtlı Ad Yok"}
                       </div>
-                      <div className="font-body-sm text-outline" style={{ fontSize: "0.6875rem" }}>
-                        Başvuru Tarihi: {new Date(app.createdAt).toLocaleDateString("tr-TR")}
+                      <div className="font-label-mono text-outline" style={{ fontSize: "0.75rem", marginTop: "2px" }}>
+                        {shortenAddress(app.walletAddress)}
+                      </div>
+                      <div className="font-body-sm text-outline" style={{ fontSize: "0.6875rem", marginTop: "2px" }}>
+                        Başvuru Zamanı: {formatTurkeyDateTime(app.createdAt)}
                       </div>
                     </div>
 

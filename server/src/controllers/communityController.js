@@ -241,6 +241,17 @@ export function createCommunityController({ communityService }) {
     }
   }
 
+  async function getCommunityActivity(req, res, next) {
+    try {
+      const { idOrSlug } = req.params;
+      const walletAddress = req.session.walletAddress;
+      const result = await communityService.getCommunityActivity(idOrSlug, walletAddress, req.query);
+      res.json({ success: true, data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   return {
     createCommunity,
     getCommunities,
@@ -252,6 +263,7 @@ export function createCommunityController({ communityService }) {
     getManageableCommunities,
     getCommunityMembers,
     getCommunityApplications,
+    getCommunityActivity,
     approveApplication,
     rejectApplication,
     removeMember,

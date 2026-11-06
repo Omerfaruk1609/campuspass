@@ -22,10 +22,10 @@ export default function CommunityProfilePage(props) {
   const handleBack = props.onBack || (() => (navigate ? navigate("/communities") : null));
   const handleManage = props.onManageCommunity || ((s) => (navigate ? navigate(`/communities/${s}/manage`) : null));
   const handleSelectEvent = props.onSelectEvent || ((id) => (navigate ? navigate(`/events/${id}`) : null));
-  const [community, setCommunity] = useState(null);
+  const [community, setCommunity] = useState(props.initialCommunity ?? null);
   const [events, setEvents] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(props.initialCommunity ? false : true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("events"); // events | about
 
@@ -134,6 +134,7 @@ export default function CommunityProfilePage(props) {
   const isAdmin = membership?.role === "ADMIN";
   const isMember = membership?.status === "ACTIVE";
   const isPending = membership?.status === "PENDING";
+  const isRejected = membership?.status === "REJECTED";
   const canManage = isOwner || isAdmin;
 
   const logoInitial = community.name ? community.name.charAt(0).toUpperCase() : "T";
@@ -314,6 +315,32 @@ export default function CommunityProfilePage(props) {
                 <button type="button" className="stitch-btn-secondary" disabled style={{ opacity: 0.8, fontSize: "0.875rem" }}>
                   Başvurun Değerlendiriliyor ⏳
                 </button>
+              ) : isRejected ? (
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <span
+                    className="stitch-badge"
+                    style={{
+                      background: "rgba(239, 68, 68, 0.15)",
+                      color: "#ef4444",
+                      padding: "0.5rem 0.85rem",
+                      fontSize: "0.8125rem",
+                      borderRadius: "6px",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                    }}
+                    title={membership?.reviewedAt ? `Değerlendirme zamanı: ${new Date(membership.reviewedAt).toLocaleString("tr-TR")}` : "Önceki başvurunuz kabul edilmedi"}
+                  >
+                    Başvurunuz Reddedildi
+                  </span>
+                  <button
+                    type="button"
+                    className="stitch-btn-primary"
+                    onClick={handleJoin}
+                    disabled={actionBusy}
+                    style={{ fontSize: "0.8125rem", padding: "0.5rem 1rem" }}
+                  >
+                    Yeniden Başvur
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"

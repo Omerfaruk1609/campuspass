@@ -59,7 +59,9 @@ model CommunityMember {
   walletAddress String
   role          CommunityRole    @default(MEMBER)
   status        MembershipStatus @default(PENDING)
-  joinedAt      DateTime?
+  joinedAt         DateTime?
+  reviewedByWallet String?
+  reviewedAt       DateTime?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -118,6 +120,7 @@ model IndexedRegistration {
   transactionHash    String
   blockNumber        Int
   logIndex           Int
+  verifiedByWallet   String?
   createdAt          DateTime            @default(now())
 
   eventMetadata      EventMetadata?      @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
@@ -140,6 +143,7 @@ model IndexedAttendance {
   transactionHash    String
   blockNumber        Int
   logIndex           Int
+  verifiedByWallet   String?
   createdAt          DateTime               @default(now())
 
   eventMetadata      EventMetadata?         @relation(fields: [chainId, contractAddress, eventId], references: [chainId, contractAddress, eventId], onDelete: Restrict, onUpdate: Cascade)
