@@ -40,6 +40,7 @@ import {
   syncStudentRegistrationOnBackend,
   verifyAttendanceOnBackend,
 } from "../utils/apiClient";
+import { invalidateStudentProfileCache } from "../utils/studentProfile";
 
 const AppContext = createContext(null);
 
@@ -560,6 +561,7 @@ export function AppProvider({
       // Hata durumunda bile istemci durumunu sıfırla
     }
     clearActiveAuthState();
+    invalidateStudentProfileCache();
     setSessionState({
       authenticated: false,
       walletAddress: null,
@@ -578,6 +580,7 @@ export function AppProvider({
   const handleDisconnectWallet = useCallback(() => {
     setAccount(null);
     clearActiveAuthState();
+    invalidateStudentProfileCache();
     logoutOrganizerSiweSession().catch(() => {});
     setSessionState({
       authenticated: false,
@@ -1064,6 +1067,7 @@ export function AppProvider({
         walletAddress: account,
         txHash: receipt?.hash || tx.hash,
       }).catch(() => {});
+      invalidateStudentProfileCache(account);
       await loadEvents(account);
 
       setBanner({
@@ -1124,6 +1128,7 @@ export function AppProvider({
         txHash: receipt?.hash || tx.hash,
         consumeNonce: true,
       }).catch(() => {});
+      invalidateStudentProfileCache(participantAddress);
       await loadEvents(account);
 
       setBanner({

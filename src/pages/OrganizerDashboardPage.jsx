@@ -8,6 +8,7 @@ import {
   shortenAddress,
 } from "../data/events";
 import {
+  checkServerSession,
   downloadOrganizerEventCsv,
   ensureOrganizerSiweSession,
   fetchOrganizerDashboardFromBackend,
@@ -53,10 +54,14 @@ export default function OrganizerDashboardPage(props) {
 
   const onCreateEventClick = props.onCreateEventClick || handleCreate;
   const onSelectEvent = props.onSelectEvent || handleSelectEvent;
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    props.initialLoading !== undefined
+      ? props.initialLoading
+      : !props.initialDashboardData
+  );
   const [error, setError] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [timeseriesData, setTimeseriesData] = useState([]);
+  const [dashboardData, setDashboardData] = useState(props.initialDashboardData ?? null);
+  const [timeseriesData, setTimeseriesData] = useState(props.initialTimeseriesData ?? []);
 
   // Filtreleme & Arama state
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -70,6 +75,17 @@ export default function OrganizerDashboardPage(props) {
 
   const ensureSiwe = useCallback(async () => {
     if (!account) return false;
+
+    // 1. AppContext sessionState kontrolü
+    if (
+      context?.sessionState?.authenticated &&
+      context?.sessionState?.walletAddress &&
+      context?.sessionState?.walletAddress.toLowerCase() === account.toLowerCase()
+    ) {
+      return true;
+    }
+
+    // 2. apiClient bellek aktif oturum kontrolü
     const current = getActiveAuthState();
     if (
       current.authenticated &&
@@ -77,6 +93,35 @@ export default function OrganizerDashboardPage(props) {
       current.walletAddress.toLowerCase() === account.toLowerCase()
     ) {
       return true;
+    }
+
+    // 3. Mevcut HttpOnly sunucu çerezi kontrolü (gereksiz imza istememek için)
+    try {
+      const serverCheck = await checkServerSession();
+      if (
+        serverCheck?.authenticated &&
+        serverCheck?.walletAddress &&
+        serverCheck.walletAddress.toLowerCase() === account.toLowerCase()
+      ) {
+        return true;
+      }
+    } catch {
+      // Çerez kontrolü başarısızsa devam et
+    }
+
+    // 4. AppContext handleSiweLogin varsa önce onu dene
+    if (typeof context?.handleSiweLogin === "function") {
+      setAuthenticating(true);
+      setAuthError(null);
+      try {
+        await context.handleSiweLogin();
+        return true;
+      } catch (err) {
+        setAuthError(err.message || "SIWE oturumu doğrulanamadı.");
+        return false;
+      } finally {
+        setAuthenticating(false);
+      }
     }
 
     if (!window.ethereum) {
@@ -97,7 +142,7 @@ export default function OrganizerDashboardPage(props) {
     } finally {
       setAuthenticating(false);
     }
-  }, [account]);
+  }, [account, context]);
 
   const loadDashboard = useCallback(async () => {
     if (!account) {
@@ -121,11 +166,17 @@ export default function OrganizerDashboardPage(props) {
         fetchOrganizerTimeseriesFromBackend({ interval: "DAY" }).catch(() => null),
       ]);
 
-      if (dashRes && dashRes.data) {
-        setDashboardData(dashRes.data);
+      const unwrappedDashboard = dashRes?.data ?? dashRes;
+      if (
+        unwrappedDashboard &&
+        (unwrappedDashboard.events || unwrappedDashboard.kpis || unwrappedDashboard.organizerAddress)
+      ) {
+        setDashboardData(unwrappedDashboard);
       }
-      if (timeRes && timeRes.data && Array.isArray(timeRes.data.eventsSeries)) {
-        setTimeseriesData(timeRes.data.eventsSeries);
+
+      const unwrappedTimeseries = timeRes?.data ?? timeRes;
+      if (unwrappedTimeseries && Array.isArray(unwrappedTimeseries.eventsSeries)) {
+        setTimeseriesData(unwrappedTimeseries.eventsSeries);
       }
     } catch (err) {
       setError(err.message || "Organizatör paneli verileri alınamadı.");
@@ -274,8 +325,9 @@ export default function OrganizerDashboardPage(props) {
   const isSynced = indexerStatus.isSynced ?? true;
 
   return (
-    <div className="page-container">
-      {/* 1. Üst Kimlik ve Senkronizasyon Durum Çubuğu */}
+    <div className="stitch-shell page-container" style={{ minHeight: "100vh", padding: "1.5rem 0 3rem" }}>
+      <div className="stitch-container">
+        {/* 1. Üst Kimlik ve Senkronizasyon Durum Çubuğu */}
       <section className="card-panel student-profile-header">
         <div className="profile-identity-row">
           <div className="profile-avatar-badge" aria-hidden="true" style={{ background: "linear-gradient(135deg, #7c3aed, #4f46e5)" }}>
@@ -398,9 +450,10 @@ export default function OrganizerDashboardPage(props) {
           <div style={{ marginTop: "1rem" }}>
             <SimpleBarChart
               data={timeseriesData.slice(-8).map((ev) => ({
-                label: `#${ev.id} ${ev.title.length > 14 ? ev.title.slice(0, 12) + "..." : ev.title}`,
-                registered: ev.registeredCount,
-                attended: ev.verifiedAttendanceCount,
+                title: `#${ev.id} ${(ev.title || "").length > 14 ? (ev.title || "").slice(0, 12) + "..." : (ev.title || "")}`,
+                fullTitle: ev.title || `Etkinlik #${ev.id}`,
+                registeredCount: Number(ev.registeredCount || 0),
+                attendedCount: Number(ev.verifiedAttendanceCount || 0),
               }))}
             />
           </div>
@@ -571,7 +624,7 @@ export default function OrganizerDashboardPage(props) {
                       </strong>
                     </td>
                     <td>
-                      <span>{ev.certificateCount} Sertifika</span>
+                      <span>{`${ev.certificates?.active ?? ev.certificates?.total ?? ev.certificateCount ?? 0} Sertifika`}</span>
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <button
@@ -610,6 +663,7 @@ export default function OrganizerDashboardPage(props) {
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

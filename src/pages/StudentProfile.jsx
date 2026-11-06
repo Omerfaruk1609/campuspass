@@ -14,11 +14,9 @@ import {
 import {
   formatTurkeyDateOnly,
   formatTurkeyDateTime,
-  hydrateMetadataStoreFromServerMap,
 } from "../utils/eventMetadata";
 import {
   ensureStudentSiweSession,
-  fetchEventsMetadataFromBackend,
   fetchStudentAccountProfileFromBackend,
   fetchStudentEventsFromBackend,
   fetchMyCertificatesFromBackend,
@@ -34,10 +32,13 @@ import {
 } from "../utils/certificatePdf";
 import {
   ATTENDANCE_STATE,
+  CACHE_TTL_MS,
   buildStudentTimeline,
   calculateStudentStats,
   classifyStudentAttendanceState,
   fetchStudentProfileData,
+  invalidateStudentProfileCache,
+  studentProfileCache,
 } from "../utils/studentProfile";
 import { generateQrMatrix } from "../utils/qrMatrix";
 
@@ -218,6 +219,7 @@ export default function StudentProfile(props) {
       try {
         await ensureStudentSiweSession(account);
         await leaveCommunityOnBackend(communitySlug);
+        invalidateStudentProfileCache(account);
         setCertBanner({
           type: "success",
           message: `"${communityName}" topluluğundan başarıyla ayrıldınız.`,
@@ -237,11 +239,8 @@ export default function StudentProfile(props) {
     [account, loadMyCommunities]
   );
 
-  const contextEvents = context?.events;
-  const contextAccount = context?.account;
-
   const fetchAndSetProfile = useCallback(
-    async (targetAccount) => {
+    async (targetAccount, forceRefresh = false) => {
       if (!targetAccount || !ethers.isAddress(targetAccount)) {
         setProfile(EMPTY_PROFILE);
         setCertificates([]);
@@ -250,19 +249,33 @@ export default function StudentProfile(props) {
       }
 
       const normalizedTarget = ethers.getAddress(targetAccount);
+      const cacheKey = normalizedTarget.toLowerCase();
+      const cached = studentProfileCache.get(cacheKey);
+      const now = Date.now();
+
+      // Kimlik-güvenli önbellek kontrolü (anında yükleme / skeleton önleme)
+      if (!forceRefresh && cached && now - cached.timestamp < CACHE_TTL_MS) {
+        setProfile(cached.profile);
+        setUserProfile(cached.userProfile);
+        if (Array.isArray(cached.certificates)) {
+          setCertificates(cached.certificates);
+        }
+        setLoading(false);
+        setRpcError(null);
+        // Çok taze ise (< 10 sn) arka planda yeniden sorgu çalıştırma
+        if (now - cached.timestamp < 10_000) {
+          return;
+        }
+      }
 
       try {
-        try {
-          const backendData = await fetchEventsMetadataFromBackend();
-          if (backendData && backendData.metadataMap) {
-            hydrateMetadataStoreFromServerMap(backendData.metadataMap);
-          }
-        } catch {
-          // Backend çevrimdışı fallback
-        }
-
         const contract = getReadOnlyContract();
-        const [onChainDataResult, backendStudentResult, certList] = await Promise.all([
+        const [
+          onChainDataResult,
+          backendStudentResult,
+          certList,
+          profileDetails,
+        ] = await Promise.all([
           fetchStudentProfileData({
             walletAddress: normalizedTarget,
             contract,
@@ -271,6 +284,7 @@ export default function StudentProfile(props) {
           }).catch((err) => ({ __error: err })),
           fetchStudentEventsFromBackend(normalizedTarget).catch(() => null),
           loadCertificatesForAccount(normalizedTarget),
+          fetchStudentAccountProfileFromBackend(normalizedTarget).catch(() => null),
           loadMyCommunities(),
         ]);
 
@@ -307,25 +321,6 @@ export default function StudentProfile(props) {
                   ev.attendanceTxHash || prev.attendanceTxHash || null,
                 hasCertificate: Boolean(ev.hasCertificate || prev.hasCertificate),
                 certificateId: ev.certificateId || prev.certificateId || null,
-              });
-            }
-          }
-        }
-
-        // Eğer aktif bağlamdaki cüzdan aynıysa AppContext içindeki doğrulanmış kayıtları da yedek olarak dahil et
-        if (
-          contextAccount &&
-          contextAccount.toLowerCase() === normalizedTarget.toLowerCase() &&
-          Array.isArray(contextEvents)
-        ) {
-          for (const ev of contextEvents) {
-            if (ev && ev.id && ev.isRegistered === true) {
-              const prev = mergedByEventId.get(Number(ev.id)) || {};
-              mergedByEventId.set(Number(ev.id), {
-                ...ev,
-                ...prev,
-                isRegistered: true,
-                isAttended: Boolean(ev.isAttended || prev.isAttended),
               });
             }
           }
@@ -390,16 +385,21 @@ export default function StudentProfile(props) {
           error: null,
         };
 
-        let profileDetails = null;
-        try {
-          profileDetails = await fetchStudentAccountProfileFromBackend(normalizedTarget);
-        } catch {}
+        // Cüzdan izolasyonu teyidi: işlem bitene kadar aktif cüzdan değişmediyse durumu güncelle
         setUserProfile(profileDetails);
         setProfile(finalProfile);
         if (Array.isArray(certList)) {
           setCertificates(certList);
         }
         setRpcError(null);
+
+        // Kimlik-güvenli önbelleğe kaydet
+        studentProfileCache.set(cacheKey, {
+          profile: finalProfile,
+          userProfile: profileDetails,
+          certificates: Array.isArray(certList) ? certList : [],
+          timestamp: Date.now(),
+        });
       } catch (err) {
         setProfile(EMPTY_PROFILE);
         setRpcError(
@@ -410,15 +410,16 @@ export default function StudentProfile(props) {
         setLoading(false);
       }
     },
-    [loadCertificatesForAccount, loadMyCommunities, contextAccount, contextEvents]
+    [loadCertificatesForAccount, loadMyCommunities]
   );
 
   async function handleManualRefresh() {
     if (!account) return;
+    invalidateStudentProfileCache(account);
     setLoading(true);
     setRpcError(null);
     setCertBanner(null);
-    await fetchAndSetProfile(account);
+    await fetchAndSetProfile(account, true);
   }
 
   useEffect(() => {
@@ -466,6 +467,7 @@ export default function StudentProfile(props) {
         requireProfileName: true,
       });
 
+      invalidateStudentProfileCache(account);
       await loadCertificatesForAccount(account);
       setSelectedCertificateModal(result.certificate);
 

@@ -243,6 +243,37 @@ export async function queryContractEventsChunked(
 }
 
 /**
+ * Sınırlı eşzamanlılık (bounded concurrency) yardımcı fonksiyonu.
+ * İstekleri paralel chunk'lara bölerek RPC ve ağ darboğazını çözer, rate limit aşımını önler.
+ */
+export async function runBoundedConcurrency(items, fn, concurrency = 6) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    const chunkRes = await Promise.all(chunk.map((item, idx) => fn(item, i + idx)));
+    results.push(...chunkRes);
+  }
+  return results;
+}
+
+// Cüzdan bazlı, kimlik-güvenli istemci içi profil önbelleği (30 saniye TTL)
+export const studentProfileCache = new Map();
+export const CACHE_TTL_MS = 30_000;
+
+export function invalidateStudentProfileCache(walletAddress = null) {
+  if (walletAddress) {
+    try {
+      studentProfileCache.delete(ethers.getAddress(walletAddress).toLowerCase());
+    } catch {
+      studentProfileCache.clear();
+    }
+  } else {
+    studentProfileCache.clear();
+  }
+}
+
+/**
  * Bağlı öğrencinin kayıt ve katılım verilerini blokzincir + metadata katmanından güvenilir biçimde okur.
  */
 export async function fetchStudentProfileData({
@@ -290,18 +321,20 @@ export async function fetchStudentProfileData({
 
     const ids = Array.from({ length: totalEvents }, (_, idx) => idx + 1);
 
-    // Önce kayıt bayraklarını kontrollü ve retry korumalı olarak sorgula
-    const registeredIds = [];
-    for (const id of ids) {
-      try {
-        const isReg = await callWithRetry(() => contract.registered(id, normalizedWallet));
-        if (isReg) {
-          registeredIds.push(id);
+    // Kayıt bayraklarını sınırlı eşzamanlılıkla (bounded concurrency = 6) hızlıca sorgula
+    const regCheckResults = await runBoundedConcurrency(
+      ids,
+      async (id) => {
+        try {
+          const isReg = await callWithRetry(() => contract.registered(id, normalizedWallet));
+          return isReg ? id : null;
+        } catch {
+          return null;
         }
-      } catch {
-        // Tekil kayıt hatasında atla
-      }
-    }
+      },
+      6
+    );
+    const registeredIds = regCheckResults.filter(Boolean);
 
     // Yalnızca kayıtlı etkinlik varsa işlem hash'lerini (isteğe bağlı) parçalı olay sorgusuyla topla
     const regTxByEvent = {};
@@ -342,40 +375,45 @@ export async function fetchStudentProfileData({
       }
     }
 
-    // Kayıtlı olunan etkinliklerin detaylarını sırayla ve güvenli gecikmeyle çek
-    const registeredEvents = [];
-    for (const id of registeredIds) {
-      try {
-        const [ev, att] = await Promise.all([
-          callWithRetry(() => contract.events(id)),
-          callWithRetry(() => contract.attended(id, normalizedWallet)),
-        ]);
+    // Kayıtlı olunan etkinliklerin detaylarını sınırlı eşzamanlılıkla (bounded concurrency = 6) çek
+    const registeredEventsRaw = await runBoundedConcurrency(
+      registeredIds,
+      async (id) => {
+        try {
+          const [ev, att] = await Promise.all([
+            callWithRetry(() => contract.events(id)),
+            callWithRetry(() => contract.attended(id, normalizedWallet)),
+          ]);
 
-        const baseOnChain = {
-          id: Number(ev.id),
-          organizer: ev.organizer,
-          title: ev.title,
-          capacity: Number(ev.capacity),
-          registeredCount: Number(ev.registeredCount),
-          active: Boolean(ev.active),
-          isRegistered: true,
-          isAttended: Boolean(att),
-          registrationTxHash: regTxByEvent[id] || null,
-          attendanceTxHash: attTxByEvent[id] || null,
-        };
+          const baseOnChain = {
+            id: Number(ev.id),
+            organizer: ev.organizer,
+            title: ev.title,
+            capacity: Number(ev.capacity),
+            registeredCount: Number(ev.registeredCount),
+            active: Boolean(ev.active),
+            isRegistered: true,
+            isAttended: Boolean(att),
+            registrationTxHash: regTxByEvent[id] || null,
+            attendanceTxHash: attTxByEvent[id] || null,
+          };
 
-        const merged = mergeOnChainEventWithMetadata(baseOnChain, {
-          chainId,
-          contractAddress,
-          nowMs,
-        });
+          const merged = mergeOnChainEventWithMetadata(baseOnChain, {
+            chainId,
+            contractAddress,
+            nowMs,
+          });
 
-        merged.attendanceState = classifyStudentAttendanceState(merged);
-        registeredEvents.push(merged);
-      } catch {
-        // Tekil etkinlik okuma hatasında diğer kayıtları göstermeye devam et
-      }
-    }
+          merged.attendanceState = classifyStudentAttendanceState(merged);
+          return merged;
+        } catch {
+          return null;
+        }
+      },
+      6
+    );
+
+    const registeredEvents = registeredEventsRaw.filter(Boolean);
 
     // Kronolojik sıralama (en yakın/yeni üstte)
     registeredEvents.sort(
