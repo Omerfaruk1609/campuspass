@@ -543,9 +543,21 @@ export async function fetchOrganizerEventAnalyticsFromBackend(
 }
 
 export async function fetchOrganizerEventParticipantsFromBackend(
-  eventId,
-  { page = 1, limit = 20, search = "", status = "ALL", customFetch = null } = {}
+  eventIdOrOptions,
+  optionsArg = {}
 ) {
+  let resolvedEventId = eventIdOrOptions;
+  let options = optionsArg;
+  if (typeof eventIdOrOptions === "object" && eventIdOrOptions !== null) {
+    resolvedEventId = eventIdOrOptions.eventId;
+    options = eventIdOrOptions;
+  }
+  const page = options.page || 1;
+  const limit = options.limit || 20;
+  const search = options.search || "";
+  const status = options.status || "ALL";
+  const customFetch = options.customFetch || null;
+
   const params = new URLSearchParams();
   if (page) params.set("page", String(page));
   if (limit) params.set("limit", String(limit));
@@ -554,7 +566,7 @@ export async function fetchOrganizerEventParticipantsFromBackend(
 
   const queryStr = params.toString() ? `?${params.toString()}` : "";
   const res = await apiRequest(
-    `/organizer/events/${Number(eventId)}/participants${queryStr}`,
+    `/organizer/events/${Number(resolvedEventId)}/participants${queryStr}`,
     {
       method: "GET",
       customFetch,
@@ -850,6 +862,23 @@ export async function fetchCommunityApplicationsFromBackend(
 
   const res = await apiRequest(
     `/communities/${encodeURIComponent(idOrSlug)}/applications?${params.toString()}`,
+    {
+      method: "GET",
+      customFetch,
+    }
+  );
+  return res.data;
+}
+
+export async function fetchCommunityActivityFromBackend(
+  idOrSlug,
+  { limit = 20, customFetch = null } = {}
+) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  const queryStr = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiRequest(
+    `/communities/${encodeURIComponent(idOrSlug)}/activity${queryStr}`,
     {
       method: "GET",
       customFetch,
@@ -1182,7 +1211,12 @@ export async function fetchManageableCommunitiesFromBackend({ customFetch = null
     method: "GET",
     customFetch,
   });
-  return Array.isArray(res.data?.items) ? res.data.items : [];
+  const data = res.data || {};
+  const list = Array.isArray(data.items) ? data.items : [];
+  list.items = list;
+  list.communities = list;
+  list.summary = data.summary || null;
+  return list;
 }
 
 export async function fetchStudentEventsFromBackend(

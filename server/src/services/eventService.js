@@ -1158,7 +1158,13 @@ export function createEventService({ prisma, blockchainService, notificationServ
               transactionHash: cleanTxHash,
               blockNumber: currentBlock,
               logIndex: 0,
+              verifiedByWallet: normVerifier,
             },
+          });
+        } else if (!attRow.verifiedByWallet) {
+          attRow = await tx.indexedAttendance.update({
+            where: { id: attRow.id },
+            data: { verifiedByWallet: normVerifier },
           });
         }
 

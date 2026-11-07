@@ -28,6 +28,11 @@ export function slugifyCommunityName(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+function shortenAddress(addr) {
+  if (!addr || typeof addr !== "string") return "";
+  return addr.length > 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
+}
+
 function sanitizeString(str, maxLen = 2000) {
   if (typeof str !== "string") return "";
   return str
@@ -517,6 +522,8 @@ export function createCommunityService({ prisma, notificationService = null }) {
           status: MEMBERSHIP_STATUS.PENDING,
           role: COMMUNITY_ROLES.MEMBER,
           joinedAt: null,
+          reviewedByWallet: null,
+          reviewedAt: null,
           updatedAt: new Date(),
         },
       });
@@ -659,8 +666,40 @@ export function createCommunityService({ prisma, notificationService = null }) {
       }),
     ]);
 
+    const wallets = new Set();
+    items.forEach((m) => {
+      if (m.walletAddress) wallets.add(m.walletAddress.toLowerCase());
+      if (m.reviewedByWallet) wallets.add(m.reviewedByWallet.toLowerCase());
+    });
+
+    let profileMap = new Map();
+    if (prisma.studentProfile && wallets.size > 0) {
+      try {
+        const profiles = await prisma.studentProfile.findMany({
+          where: { walletAddress: { in: Array.from(wallets) } },
+          select: { walletAddress: true, displayName: true, avatarUrl: true, department: true },
+        });
+        profileMap = new Map(profiles.map((p) => [p.walletAddress.toLowerCase(), p]));
+      } catch {
+        // Fallback
+      }
+    }
+
+    const enrichedItems = items.map((m) => {
+      const prof = profileMap.get(m.walletAddress?.toLowerCase());
+      const revProf = m.reviewedByWallet ? profileMap.get(m.reviewedByWallet.toLowerCase()) : null;
+      return {
+        ...m,
+        displayName: prof?.displayName || null,
+        avatarUrl: prof?.avatarUrl || null,
+        department: prof?.department || null,
+        reviewedByDisplayName: revProf?.displayName || null,
+        reviewedByFormatted: m.reviewedByWallet ? ethers.getAddress(m.reviewedByWallet) : null,
+      };
+    });
+
     return {
-      items,
+      items: enrichedItems,
       meta: {
         page: pageNum,
         limit: take,
@@ -705,6 +744,8 @@ export function createCommunityService({ prisma, notificationService = null }) {
       data: {
         status: MEMBERSHIP_STATUS.ACTIVE,
         joinedAt: new Date(),
+        reviewedByWallet: callerWallet ? ethers.getAddress(callerWallet) : null,
+        reviewedAt: new Date(),
         updatedAt: new Date(),
       },
     });
@@ -759,6 +800,8 @@ export function createCommunityService({ prisma, notificationService = null }) {
       where: { id: target.id },
       data: {
         status: MEMBERSHIP_STATUS.REJECTED,
+        reviewedByWallet: callerWallet ? ethers.getAddress(callerWallet) : null,
+        reviewedAt: new Date(),
         updatedAt: new Date(),
       },
     });
@@ -1264,23 +1307,299 @@ export function createCommunityService({ prisma, notificationService = null }) {
   }
 
   /**
+   * Topluluk Son Operasyonel Hareketler Akışı (Faz 19 - Hub Activity Feed)
+   * Gerçek üyelik kararları, etkinlik bağlamaları, duyurular, kayıt ve katılımlar.
+   */
+  async function getCommunityActivity(idOrSlug, callerWallet, { limit = 20 } = {}) {
+    const community = await findCommunityByIdOrSlug(idOrSlug);
+    if (!community) {
+      throw ApiError.notFound("Topluluk bulunamadı.", "COMMUNITY_NOT_FOUND");
+    }
+
+    await requireRole(community.id, callerWallet);
+
+    const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
+
+    // 1. Üyelik hareketleri (Katılma, Onaylama, Reddetme)
+    const recentMembers = await prisma.communityMember.findMany({
+      where: { communityId: community.id },
+      orderBy: { updatedAt: "desc" },
+      take: safeLimit,
+    });
+
+    // 2. Duyurular
+    const recentAnnouncements = await prisma.announcement.findMany({
+      where: { targetType: "COMMUNITY", communityId: community.id },
+      orderBy: { createdAt: "desc" },
+      take: safeLimit,
+    });
+
+    // 3. Topluluk Etkinlikleri
+    const communityEvents = await prisma.eventMetadata.findMany({
+      where: { communityId: community.id },
+      select: { eventId: true, title: true, chainId: true, contractAddress: true, createdAt: true, cancelled: true },
+      take: 20,
+    });
+
+    const eventIds = communityEvents.map((e) => e.eventId);
+    const eventMap = new Map(communityEvents.map((e) => [e.eventId, e]));
+
+    // 4. Etkinlik Kayıtları & Katılımları & Sertifikaları (Varsa)
+    let recentRegs = [];
+    let recentAtts = [];
+    let recentCerts = [];
+
+    if (eventIds.length > 0) {
+      [recentRegs, recentAtts, recentCerts] = await Promise.all([
+        prisma.indexedRegistration.findMany({
+          where: {
+            chainId,
+            contractAddress: contractAddressNormalized,
+            eventId: { in: eventIds },
+          },
+          orderBy: { createdAt: "desc" },
+          take: safeLimit,
+        }),
+        prisma.indexedAttendance.findMany({
+          where: {
+            chainId,
+            contractAddress: contractAddressNormalized,
+            eventId: { in: eventIds },
+          },
+          orderBy: { createdAt: "desc" },
+          take: safeLimit,
+        }),
+        prisma.attendanceCertificate.findMany({
+          where: {
+            chainId,
+            contractAddress: contractAddressNormalized,
+            eventId: { in: eventIds },
+          },
+          orderBy: { issuedAt: "desc" },
+          take: safeLimit,
+        }),
+      ]);
+    }
+
+    // Profil haritası oluştur
+    const allWallets = new Set();
+    recentMembers.forEach((m) => {
+      if (m.walletAddress) allWallets.add(m.walletAddress.toLowerCase());
+      if (m.reviewedByWallet) allWallets.add(m.reviewedByWallet.toLowerCase());
+    });
+    recentAnnouncements.forEach((a) => {
+      if (a.authorWallet) allWallets.add(a.authorWallet.toLowerCase());
+    });
+    recentRegs.forEach((r) => {
+      if (r.participantAddress) allWallets.add(r.participantAddress.toLowerCase());
+    });
+    recentAtts.forEach((a) => {
+      if (a.participantAddress) allWallets.add(a.participantAddress.toLowerCase());
+      if (a.verifiedByWallet) allWallets.add(a.verifiedByWallet.toLowerCase());
+    });
+    recentCerts.forEach((c) => {
+      if (c.participantAddress) allWallets.add(c.participantAddress.toLowerCase());
+      if (c.organizerAddress) allWallets.add(c.organizerAddress.toLowerCase());
+    });
+
+    let profileMap = new Map();
+    if (prisma.studentProfile && allWallets.size > 0) {
+      try {
+        const profiles = await prisma.studentProfile.findMany({
+          where: { walletAddress: { in: Array.from(allWallets) } },
+          select: { walletAddress: true, displayName: true },
+        });
+        profileMap = new Map(profiles.map((p) => [p.walletAddress.toLowerCase(), p]));
+      } catch {
+        // Fallback
+      }
+    }
+
+    const activities = [];
+
+    // Üyelik kayıtlarını dönüştür
+    recentMembers.forEach((m) => {
+      const targetName = profileMap.get(m.walletAddress.toLowerCase())?.displayName || shortenAddress(m.walletAddress);
+      const reviewerName = m.reviewedByWallet
+        ? (profileMap.get(m.reviewedByWallet.toLowerCase())?.displayName || shortenAddress(m.reviewedByWallet))
+        : null;
+
+      if (m.status === "ACTIVE") {
+        activities.push({
+          id: `mem_active_${m.id}`,
+          type: "MEMBERSHIP_APPROVED",
+          category: "Üyelik",
+          title: "Üyelik Onaylandı",
+          description: reviewerName
+            ? `${targetName} üye olarak onaylandı (Değerlendiren: ${reviewerName}).`
+            : `${targetName} topluluk üyesi olarak katıldı.`,
+          timestamp: new Date(m.joinedAt || m.updatedAt || m.createdAt).toISOString(),
+          actorWallet: m.reviewedByWallet || null,
+          targetWallet: m.walletAddress,
+          badgeColor: "success",
+        });
+      } else if (m.status === "PENDING") {
+        activities.push({
+          id: `mem_pending_${m.id}`,
+          type: "MEMBERSHIP_REQUESTED",
+          category: "Başvuru",
+          title: "Yeni Katılım Başvurusu",
+          description: `${targetName} topluluğa katılmak için başvurdu.`,
+          timestamp: new Date(m.createdAt).toISOString(),
+          actorWallet: m.walletAddress,
+          targetWallet: m.walletAddress,
+          badgeColor: "warning",
+        });
+      } else if (m.status === "REJECTED") {
+        activities.push({
+          id: `mem_rejected_${m.id}`,
+          type: "MEMBERSHIP_REJECTED",
+          category: "Başvuru",
+          title: "Başvuru Reddedildi",
+          description: reviewerName
+            ? `${targetName} başvurusu reddedildi (Değerlendiren: ${reviewerName}).`
+            : `${targetName} başvurusu reddedildi.`,
+          timestamp: new Date(m.reviewedAt || m.updatedAt || m.createdAt).toISOString(),
+          actorWallet: m.reviewedByWallet || null,
+          targetWallet: m.walletAddress,
+          badgeColor: "error",
+        });
+      }
+    });
+
+    // Duyuruları dönüştür
+    recentAnnouncements.forEach((a) => {
+      const authorName = profileMap.get(a.authorWallet.toLowerCase())?.displayName || shortenAddress(a.authorWallet);
+      activities.push({
+        id: `ann_${a.id}`,
+        type: "ANNOUNCEMENT_PUBLISHED",
+        category: "Duyuru",
+        title: `Duyuru Yayınlandı: ${a.title}`,
+        description: `Yayınlayan: ${authorName} • ${a.recipientCount || 0} aktif üyeye iletildi.`,
+        timestamp: new Date(a.createdAt).toISOString(),
+        actorWallet: a.authorWallet,
+        targetWallet: null,
+        badgeColor: "primary",
+      });
+    });
+
+    // Katılım doğrulamalarını dönüştür
+    recentAtts.forEach((att) => {
+      const ev = eventMap.get(att.eventId);
+      const studentName = profileMap.get(att.participantAddress.toLowerCase())?.displayName || shortenAddress(att.participantAddress);
+      const verifierName = att.verifiedByWallet
+        ? (profileMap.get(att.verifiedByWallet.toLowerCase())?.displayName || shortenAddress(att.verifiedByWallet))
+        : null;
+
+      activities.push({
+        id: `att_${att.id}`,
+        type: "ATTENDANCE_VERIFIED",
+        category: "Yoklama",
+        title: "Katılım Doğrulandı ✓",
+        description: verifierName
+          ? `Etkinlik #${att.eventId} (${ev?.title || "Etkinlik"}): ${studentName} yoklaması alındı (Doğrulayan: ${verifierName}).`
+          : `Etkinlik #${att.eventId} (${ev?.title || "Etkinlik"}): ${studentName} yoklaması alındı.`,
+        timestamp: new Date(att.createdAt).toISOString(),
+        actorWallet: att.verifiedByWallet || null,
+        targetWallet: att.participantAddress,
+        badgeColor: "success",
+      });
+    });
+
+    // Sertifikaları dönüştür
+    recentCerts.forEach((cert) => {
+      const studentName = cert.displayName || profileMap.get(cert.participantAddress.toLowerCase())?.displayName || shortenAddress(cert.participantAddress);
+      activities.push({
+        id: `cert_${cert.id}`,
+        type: "CERTIFICATE_ISSUED",
+        category: "Sertifika",
+        title: "Sertifika Verildi 🎓",
+        description: `Etkinlik #${cert.eventId} (${cert.eventTitle}): ${studentName} adına dijital sertifika (${cert.certificateId}) mühürlendi.`,
+        timestamp: new Date(cert.issuedAt).toISOString(),
+        actorWallet: cert.organizerAddress,
+        targetWallet: cert.participantAddress,
+        badgeColor: "tertiary",
+      });
+    });
+
+    // Etkinlik kayıtlarını dönüştür (ilk 10)
+    recentRegs.slice(0, 10).forEach((reg) => {
+      const ev = eventMap.get(reg.eventId);
+      const studentName = profileMap.get(reg.participantAddress.toLowerCase())?.displayName || shortenAddress(reg.participantAddress);
+      activities.push({
+        id: `reg_${reg.id}`,
+        type: "REGISTRATION",
+        category: "Kayıt",
+        title: "Etkinlik Kaydı",
+        description: `Etkinlik #${reg.eventId} (${ev?.title || "Etkinlik"}): ${studentName} kaydoldu.`,
+        timestamp: new Date(reg.createdAt).toISOString(),
+        actorWallet: reg.participantAddress,
+        targetWallet: reg.participantAddress,
+        badgeColor: "info",
+      });
+    });
+
+    // Kronolojik sırala (en yeni üstte)
+    activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return {
+      communityId: community.id,
+      communitySlug: community.slug,
+      communityName: community.name,
+      items: activities.slice(0, safeLimit),
+      totalCount: activities.length,
+    };
+  }
+
+  /**
    * Kullanıcının Etkinlik Düzenleme Yetkisine Sahip Olduğu (OWNER / ADMIN) Topluluklar
    */
   async function getManageableCommunities(walletAddress) {
     const userComms = await getUserCommunities(walletAddress);
-    const items = userComms.manageable.map((m) => ({
-      id: m.community.id,
-      communityId: m.community.id,
-      name: m.community.name,
-      slug: m.community.slug,
-      universityName: m.community.universityName,
-      category: m.community.category,
-      role: m.role,
-      membershipStatus: m.status,
-    }));
+    const enriched = await Promise.all(
+      userComms.manageable.map(async (m) => {
+        const [activeMemberCount, pendingApplicationCount, eventCount] = await Promise.all([
+          prisma.communityMember.count({
+            where: { communityId: m.community.id, status: MEMBERSHIP_STATUS.ACTIVE },
+          }).catch(() => 0),
+          prisma.communityMember.count({
+            where: { communityId: m.community.id, status: MEMBERSHIP_STATUS.PENDING },
+          }).catch(() => 0),
+          prisma.eventMetadata.count({
+            where: { communityId: m.community.id },
+          }).catch(() => 0),
+        ]);
+
+        return {
+          id: m.community.id,
+          communityId: m.community.id,
+          name: m.community.name,
+          slug: m.community.slug,
+          universityName: m.community.universityName,
+          category: m.community.category,
+          logoUrl: m.community.logoUrl,
+          coverImageUrl: m.community.coverImageUrl,
+          shortDescription: m.community.shortDescription,
+          role: m.role,
+          membershipStatus: m.status,
+          activeMemberCount,
+          pendingApplicationCount,
+          eventCount,
+        };
+      })
+    );
+
+    const summary = {
+      totalManagedCommunities: enriched.length,
+      totalActiveMembers: enriched.reduce((acc, c) => acc + (c.activeMemberCount || 0), 0),
+      totalPendingApplications: enriched.reduce((acc, c) => acc + (c.pendingApplicationCount || 0), 0),
+      totalEvents: enriched.reduce((acc, c) => acc + (c.eventCount || 0), 0),
+    };
+
     return {
-      items,
-      communities: items,
+      items: enriched,
+      communities: enriched,
+      summary,
     };
   }
 
@@ -1303,6 +1622,7 @@ export function createCommunityService({ prisma, notificationService = null }) {
     getCommunityAnalytics,
     getUserCommunities,
     getManageableCommunities,
+    getCommunityActivity,
     createAnnouncement,
     getAnnouncements,
   };

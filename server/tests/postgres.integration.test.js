@@ -499,7 +499,58 @@ async function runPostgresIntegrationSuite() {
       "8. [BAŞARILI] Faz 15 Notification, Announcement ve NotificationPreference (P2002) CRUD testleri doğrulandı."
     );
 
+    // 9. Faz 19 — Operasyonel Denetim İzi (reviewedByWallet, reviewedAt, verifiedByWallet) Gerçek PostgreSQL Doğrulaması
+    const auditedMember = await prisma.communityMember.update({
+      where: { id: pendingMember.id },
+      data: {
+        reviewedByWallet: TEST_ORGANIZER,
+        reviewedAt: new Date("2026-11-07T12:00:00Z"),
+      },
+    });
+    if (
+      auditedMember.reviewedByWallet !== TEST_ORGANIZER ||
+      !auditedMember.reviewedAt
+    ) {
+      throw new Error("CommunityMember Faz 19 denetim alanları (reviewedByWallet/reviewedAt) doğrulaması başarısız.");
+    }
+
+    const auditedRegistration = await prisma.indexedRegistration.create({
+      data: {
+        chainId: TEST_CHAIN_ID,
+        contractAddress: TEST_CONTRACT,
+        eventId: TEST_EVENT_ID,
+        participantAddress: TEST_STUDENT,
+        transactionHash:
+          "0x8888888888888888888888888888888888888888888888888888888888888888",
+        blockNumber: 129,
+        logIndex: 0,
+      },
+    });
+
+    const auditedAttendance = await prisma.indexedAttendance.create({
+      data: {
+        chainId: TEST_CHAIN_ID,
+        contractAddress: TEST_CONTRACT,
+        eventId: TEST_EVENT_ID,
+        participantAddress: TEST_STUDENT,
+        verifiedByWallet: TEST_ORGANIZER,
+        transactionHash:
+          "0x9999999999999999999999999999999999999999999999999999999999999999",
+        blockNumber: 130,
+        logIndex: 0,
+      },
+    });
+    if (auditedAttendance.verifiedByWallet !== TEST_ORGANIZER) {
+      throw new Error("IndexedAttendance Faz 19 verifiedByWallet doğrulaması başarısız.");
+    }
+
+    console.log(
+      "9. [BAŞARILI] Faz 19 Operasyonel Denetim İzi (reviewedByWallet, reviewedAt, verifiedByWallet) PostgreSQL şemasında doğrulandı."
+    );
+
     // İzole test kayıtlarını temizle
+    await prisma.indexedAttendance.delete({ where: { id: auditedAttendance.id } });
+    await prisma.indexedRegistration.delete({ where: { id: auditedRegistration.id } });
     await prisma.notification.deleteMany({ where: { recipientWallet: TEST_NOTIF_WALLET } });
     await prisma.notificationPreference.deleteMany({ where: { walletAddress: TEST_NOTIF_WALLET } });
     await prisma.announcement.deleteMany({ where: { id: createdAnnouncement.id } });

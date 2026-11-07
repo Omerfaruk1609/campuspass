@@ -31,6 +31,7 @@ export function createCommunityRoutes({
 
   // Topluluk Yönetimi & Üyeler (OWNER / ADMIN)
   router.patch("/:idOrSlug", requireAuthSession, communityController.updateCommunity);
+  router.get("/:idOrSlug/activity", requireAuthSession, communityController.getCommunityActivity);
   router.get("/:idOrSlug/members", requireAuthSession, communityController.getCommunityMembers);
   router.get("/:idOrSlug/applications", requireAuthSession, communityController.getCommunityApplications);
   router.post(

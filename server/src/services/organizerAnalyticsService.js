@@ -426,9 +426,9 @@ export function createOrganizerAnalyticsService({
     }
 
     // Yetki kontrolü: Yalnızca etkinlik organizatörü erişebilir
-    await blockchainService.verifyOnChainOrganizer(numEventId, organizerWalletAddress);
+    const onChainEvent = await blockchainService.verifyOnChainOrganizer(numEventId, organizerWalletAddress);
 
-    const [indexedRegs, indexedAtts, certs] = await Promise.all([
+    const [indexedRegs, indexedAtts, certs, eventMeta] = await Promise.all([
       prisma.indexedRegistration.findMany({
         where: {
           chainId,
@@ -451,10 +451,24 @@ export function createOrganizerAnalyticsService({
           eventId: numEventId,
         },
       }),
+      prisma.eventMetadata.findUnique({
+        where: {
+          chainId_contractAddress_eventId: {
+            chainId,
+            contractAddress: contractAddressNormalized,
+            eventId: numEventId,
+          },
+        },
+      }).catch(() => null),
     ]);
 
     const attMap = new Map(indexedAtts.map((a) => [a.participantAddress.toLowerCase(), a]));
     const certMap = new Map(certs.map((c) => [c.participantAddress.toLowerCase(), c]));
+
+    const isEventFinished = Boolean(
+      eventMeta?.cancelled ||
+      (eventMeta?.endAt && new Date(eventMeta.endAt).getTime() < Date.now())
+    );
 
     // Katılımcıların doğrulanmış StudentProfile kayıtlarını sorgula
     const participantWallets = indexedRegs.map((r) => r.participantAddress.toLowerCase());
@@ -490,6 +504,16 @@ export function createOrganizerAnalyticsService({
       const hasCertificate = Boolean(cert && cert.status === "ACTIVE");
       const displayName = cert?.displayName || profile?.displayName || null;
       const hasProfileName = Boolean(displayName && displayName.trim().length > 0);
+      const isNoShow = Boolean(!isAttended && isEventFinished);
+
+      let statusLabel = "Kayıtlı";
+      if (hasCertificate) {
+        statusLabel = "Sertifikalı";
+      } else if (isAttended) {
+        statusLabel = hasProfileName ? "Katılım Doğrulandı" : "Profil Adı Eksik";
+      } else if (isNoShow) {
+        statusLabel = "Katılmadı (No-show)";
+      }
 
       return {
         walletAddress: ethers.getAddress(reg.participantAddress),
@@ -504,11 +528,16 @@ export function createOrganizerAnalyticsService({
         registrationBlockNumber: Number(reg.blockNumber),
         registeredAt: reg.createdAt.toISOString(),
         isAttended,
+        isNoShow,
+        statusLabel,
         attendanceTxHash: att ? att.transactionHash : null,
         attendanceBlockNumber: att ? Number(att.blockNumber) : null,
         attendedAt: att ? att.createdAt.toISOString() : null,
+        verifiedByWallet: att?.verifiedByWallet ? ethers.getAddress(att.verifiedByWallet) : null,
         certificateId: cert ? cert.certificateId : null,
         certificateStatus: cert ? cert.status : null,
+        certificateIssuedBy: cert?.organizerAddress ? ethers.getAddress(cert.organizerAddress) : null,
+        certificateIssuedAt: cert?.issuedAt ? cert.issuedAt.toISOString() : null,
         hasCertificate,
       };
     });
@@ -525,13 +554,17 @@ export function createOrganizerAnalyticsService({
       );
     }
 
-    // Durum Filtresi
+    // Durum Filtresi (Faz 19 genişletilmiş filtreler)
     if (status === "ATTENDED") {
       participants = participants.filter((p) => p.isAttended);
     } else if (status === "REGISTERED_ONLY") {
       participants = participants.filter((p) => !p.isAttended);
     } else if (status === "CERTIFIED") {
       participants = participants.filter((p) => p.hasCertificate);
+    } else if (status === "NO_SHOW") {
+      participants = participants.filter((p) => p.isNoShow);
+    } else if (status === "MISSING_PROFILE_NAME") {
+      participants = participants.filter((p) => !p.hasProfileName);
     }
 
     const total = participants.length;
@@ -540,6 +573,30 @@ export function createOrganizerAnalyticsService({
     const totalPages = Math.max(1, Math.ceil(total / safeLimit));
     const offset = (safePage - 1) * safeLimit;
     const items = participants.slice(offset, offset + safeLimit);
+
+    const capacity = Number(onChainEvent?.capacity || 0);
+    const registeredCount = indexedRegs.length;
+    const verifiedAttendanceCount = indexedAtts.length;
+    const certificateCount = certs.filter((c) => c.status === "ACTIVE").length;
+    const attendanceRate = registeredCount > 0 ? Number(((verifiedAttendanceCount / registeredCount) * 100).toFixed(1)) : 0;
+    const remainingCapacity = Math.max(0, capacity - registeredCount);
+    const noShowCount = isEventFinished ? Math.max(0, registeredCount - verifiedAttendanceCount) : 0;
+    const missingProfileNameCount = indexedRegs.filter((r) => {
+      const prof = profileMap.get(r.participantAddress.toLowerCase());
+      return !prof?.displayName;
+    }).length;
+
+    const totals = {
+      capacity,
+      registeredCount,
+      verifiedAttendanceCount,
+      certificateCount,
+      attendanceRate,
+      remainingCapacity,
+      noShowCount,
+      missingProfileNameCount,
+      isEventFinished,
+    };
 
     return {
       eventId: numEventId,
@@ -551,6 +608,7 @@ export function createOrganizerAnalyticsService({
         totalPages,
         hasMore: safePage < totalPages,
       },
+      totals,
       items,
       participants: items,
     };
@@ -700,6 +758,9 @@ export function createOrganizerAnalyticsService({
           "Katilim Tx Hash",
           "Sertifika ID",
           "Sertifika Durumu",
+          "Yoklama Dogrulayan Cuzdan",
+          "Sertifika Veren Cuzdan",
+          "Sertifika Verilme Tarihi",
         ])
       );
 
@@ -723,6 +784,9 @@ export function createOrganizerAnalyticsService({
             att ? att.transactionHash : "",
             cert ? cert.certificateId : "",
             cert ? cert.status : "",
+            att?.verifiedByWallet ? ethers.getAddress(att.verifiedByWallet) : "kayit yok",
+            cert?.organizerAddress ? ethers.getAddress(cert.organizerAddress) : "kayit yok",
+            cert?.issuedAt ? new Date(cert.issuedAt).toISOString() : "kayit yok",
           ])
         );
       });
