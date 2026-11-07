@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { MONAD_CHAIN_ID, shortenAddress } from "../data/events";
 import { ensureSiweSession } from "../utils/apiClient";
 
@@ -16,11 +16,31 @@ export default function Navbar({
   unreadNotificationCount = 0,
 }) {
   const isCorrectNetwork = chainId === MONAD_CHAIN_ID;
+  const location = useLocation();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [siweLoading, setSiweLoading] = useState(false);
   const [siweError, setSiweError] = useState(null);
   const menuRef = useRef(null);
+
+  // Rota değiştiğinde açık menüleri kapat
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setAccountMenuOpen(false);
+  }, [location?.pathname]);
+
+  // Escape tuşuna basıldığında menüleri kapat (Erişilebilirlik)
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        setAccountMenuOpen(false);
+        setMobileMenuOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Dışarı tıklama durumunda menüyü kapat
   useEffect(() => {
@@ -152,15 +172,8 @@ export default function Navbar({
           </div>
         </Link>
 
-        {/* Primary Navigation Links */}
-        <nav
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.25rem",
-          }}
-          className="hide-mobile"
-        >
+        {/* Primary Navigation Links (Desktop) */}
+        <nav className="stitch-desktop-nav">
           <NavLink
             to="/"
             end
@@ -714,8 +727,335 @@ export default function Navbar({
               {isConnecting ? "Bağlanıyor..." : "Cüzdanı Bağla"}
             </button>
           )}
+
+          {/* Mobil Menü Butonu */}
+          <button
+            type="button"
+            className="stitch-mobile-toggle"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? "Menüyü Kapat" : "Menüyü Aç"}
+            aria-expanded={mobileMenuOpen}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>
+              {mobileMenuOpen ? "close" : "menu"}
+            </span>
+          </button>
         </div>
       </div>
+
+      {/* Mobil Gezinme Çekmecesi & Arka Plan Karartması */}
+      {mobileMenuOpen && (
+        <>
+          <div
+            className="stitch-mobile-backdrop"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            className="stitch-mobile-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobil Gezinme Menüsü"
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingBottom: "0.5rem",
+                borderBottom: "1px solid rgba(142, 144, 161, 0.2)",
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" }}>
+                Campus<span style={{ color: "#6f88ff" }}>Pass</span> Gezinme
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--stitch-outline)",
+                  cursor: "pointer",
+                  display: "flex",
+                  padding: "4px",
+                }}
+                aria-label="Kapat"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                  close
+                </span>
+              </button>
+            </div>
+
+            {/* Network Durumu (Mobil) */}
+            {account && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: isCorrectNetwork
+                    ? "rgba(111, 136, 255, 0.12)"
+                    : "rgba(239, 68, 68, 0.15)",
+                  border: isCorrectNetwork
+                    ? "1px solid rgba(111, 136, 255, 0.3)"
+                    : "1px solid rgba(239, 68, 68, 0.4)",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  color: isCorrectNetwork ? "#b9c3ff" : "#fca5a5",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: isCorrectNetwork ? "#10b981" : "#ef4444",
+                    }}
+                  />
+                  <span>{isCorrectNetwork ? "Monad Testnet" : "Yanlış Ağ"}</span>
+                </div>
+                {!isCorrectNetwork && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onSwitchNetwork && onSwitchNetwork();
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "inherit",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Geçiş Yap
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Navigasyon Linkleri */}
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                home
+              </span>
+              Ana Sayfa
+            </NavLink>
+
+            <NavLink
+              to="/events"
+              className={({ isActive }) =>
+                `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                event
+              </span>
+              Etkinlikler
+            </NavLink>
+
+            <NavLink
+              to="/communities"
+              className={({ isActive }) =>
+                `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                groups
+              </span>
+              Topluluklar
+            </NavLink>
+
+            {account && (
+              <NavLink
+                to="/profile"
+                className={({ isActive }) =>
+                  `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+                }
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                  badge
+                </span>
+                Öğrenci Paneli
+              </NavLink>
+            )}
+
+            {account && (
+              <NavLink
+                to="/organizer"
+                className={({ isActive }) =>
+                  `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+                }
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                  dashboard
+                </span>
+                Organizatör Paneli
+              </NavLink>
+            )}
+
+            <NavLink
+              to="/verify"
+              className={({ isActive }) =>
+                `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                verified
+              </span>
+              Sertifika Doğrula
+            </NavLink>
+
+            <div className="stitch-mobile-divider" />
+
+            {account ? (
+              <>
+                <NavLink
+                  to="/notifications"
+                  className={({ isActive }) =>
+                    `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+                  }
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                    notifications
+                  </span>
+                  <span>Bildirimler</span>
+                  {unreadNotificationCount > 0 && (
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        padding: "0.15rem 0.5rem",
+                        borderRadius: "9999px",
+                        backgroundColor: "#ef4444",
+                        color: "#ffffff",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {unreadNotificationCount}
+                    </span>
+                  )}
+                </NavLink>
+
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) =>
+                    `stitch-mobile-drawer-link ${isActive ? "active" : ""}`
+                  }
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                    settings
+                  </span>
+                  Hesap ve Oturum Ayarları
+                </NavLink>
+
+                {sessionState?.authenticated && onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onLogout();
+                    }}
+                    style={{
+                      marginTop: "0.25rem",
+                      padding: "0.6rem 1rem",
+                      borderRadius: "0.5rem",
+                      backgroundColor: "rgba(239, 68, 68, 0.1)",
+                      color: "#ef4444",
+                      border: "1px solid rgba(239, 68, 68, 0.25)",
+                      cursor: "pointer",
+                      fontSize: "0.875rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      width: "100%",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                      logout
+                    </span>
+                    Oturumu Kapat (SIWE)
+                  </button>
+                )}
+
+                {onDisconnectWallet && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onDisconnectWallet();
+                    }}
+                    style={{
+                      marginTop: "0.25rem",
+                      padding: "0.5rem 1rem",
+                      borderRadius: "0.5rem",
+                      backgroundColor: "transparent",
+                      color: "var(--stitch-outline)",
+                      border: "1px solid rgba(142, 144, 161, 0.25)",
+                      cursor: "pointer",
+                      fontSize: "0.8125rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      width: "100%",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                      link_off
+                    </span>
+                    Cüzdan Bağlantısını Kes
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="stitch-btn-primary"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onConnectWallet && onConnectWallet();
+                }}
+                disabled={isConnecting}
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  padding: "0.65rem 1rem",
+                  marginTop: "0.5rem",
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+                  account_balance_wallet
+                </span>
+                {isConnecting ? "Bağlanıyor..." : "Cüzdanı Bağla"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </header>
   );
 }
